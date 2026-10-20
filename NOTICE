@@ -13,8 +13,13 @@ Packages inside the Guix image retain their own terms.
 
 The matching source download, hello-guix-VERSION-src.tar.gz, extracts to
 hello-guix-VERSION-src/. The project source is at the top of this folder,
-with build instructions in docs/development.md. Sources for Asahi’s
-installer, the macOS runtime and the Guix image are under upstream/.
+with build instructions in docs/development.md and our changes in patches/.
+The build.json record identifies the sources used for the installer and
+image. Upstream sources are referenced rather than included:
+
+  packaging/guix/channels.scm pins the channels containing package recipes.
+  packaging/macos/asahi-installer-source.json pins Asahi’s installer source.
+  packaging/macos/runtime-sources.json gives runtime source URLs and hashes.
 
 All paths above refer to the extracted downloads. Apple’s device firmware
 is collected from the target Mac during installation and is not included

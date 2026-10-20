@@ -5,7 +5,6 @@
 
 import argparse
 import gzip
-import io
 import json
 import platform
 from pathlib import Path, PurePosixPath
@@ -24,7 +23,8 @@ import zipfile
 sys.dont_write_bytecode = True
 
 from asahi_payload import check_os, json_bytes, require
-from build_inputs import PROJECT, checksum_text, file_hashes, record_snapshot, sha256
+from build_inputs import (PROJECT, checksum_text, file_hashes, record_snapshot,
+                          sha256, source_files)
 from prepare_asahi import apply_adaptations, unpack_source
 
 sys.path.insert(0, str(PROJECT / "src/hello-guix/installer/macos"))
@@ -47,9 +47,11 @@ def verify_checksums(directory):
 
 
 def fetch_archive(local, pin, target):
+    """Verify a cached input in place, or fetch it into the build workspace."""
     if local is not None:
-        shutil.copyfile(local, target)
+        target = local
     else:
+        target.parent.mkdir(parents=True, exist_ok=True)
         print(f"Downloading {pin['url']}", flush=True)
         request = urllib.request.Request(pin["url"], headers={"User-Agent": "hello-guix"})
         with urllib.request.urlopen(request, timeout=60) as response, target.open("wb") as output:
@@ -57,6 +59,7 @@ def fetch_archive(local, pin, target):
     require(sha256(target) == pin["sha256"], f"Archive checksum mismatch: {target.name}")
     if "bytes" in pin:
         require(target.stat().st_size == pin["bytes"], "Runtime archive size differs")
+    return target
 
 
 def unpack_runtime(archive, destination):
@@ -125,18 +128,22 @@ def build_libffi(archive, runtime, minimum_macos, cores=None):
                        env=environment, check=True)
 
 
-def collect_runtime_sources(source_record, bundle, cache=None):
-    """Keep upstream sources, collect their notices and install the pinned certificates."""
+def prepare_runtime_inputs(source_record, bundle, destination, cache=None):
+    """Read notices, certificates and libffi from pinned build inputs."""
     manifest = json.loads((source_record / "packaging/macos/runtime-sources.json").read_text())
-    destination = source_record / "upstream/runtime"
-    destination.mkdir(parents=True)
+    certificates = manifest["certificates"]
+    sources = {}
     notices = bundle / "notices"
     notices.mkdir()
     for entry in manifest["files"]:
-        fetch_archive(cache / entry["file"] if cache else None,
-                      entry, destination / entry["file"])
+        if not (entry.get("notices") or entry["component"] == "libffi"
+                or entry["file"] == certificates["archive"]):
+            continue
+        archive_path = fetch_archive(cache / entry["file"] if cache else None,
+                                     entry, destination / entry["file"])
+        sources[entry["file"]] = archive_path
         if entry.get("notices"):
-            with tarfile.open(destination / entry["file"]) as archive:
+            with tarfile.open(archive_path) as archive:
                 for name, path in entry["notices"].items():
                     member = archive.getmember(path)
                     require(member.isfile(), f"Notice must be a regular file: {path}")
@@ -146,14 +153,13 @@ def collect_runtime_sources(source_record, bundle, cache=None):
 
     # Asahi copies certificates from its build host. Use the complete set
     # from the certifi release in runtime-sources.json.
-    certificates = manifest["certificates"]
-    with tarfile.open(destination / certificates["archive"]) as archive:
+    with tarfile.open(sources[certificates["archive"]]) as archive:
         member = archive.getmember(certificates["member"])
         require(member.isfile(), "Certificate bundle must be a regular file")
         data = archive.extractfile(member).read()
     (bundle / "runtime" / certificates["runtime_path"]).write_bytes(data)
     libffi, = (entry for entry in manifest["files"] if entry["component"] == "libffi")
-    return destination / libffi["file"]
+    return sources[libffi["file"]]
 
 
 def check_catalogue(catalogue):
@@ -207,10 +213,8 @@ def assemble(catalogue, output, runtime_archive=None, source_archive=None,
         require(pin["source_commit"] == source_pin["commit"]
                 and pin["release"] == source_pin["release"], "Runtime and source revisions differ")
 
-        runtime_tar = temporary / "runtime.tar.gz"
-        source_tar = temporary / "source.tar.gz"
-        fetch_archive(runtime_archive, pin, runtime_tar)
-        fetch_archive(source_archive, source_pin, source_tar)
+        runtime_tar = fetch_archive(runtime_archive, pin, temporary / "runtime.tar.gz")
+        source_tar = fetch_archive(source_archive, source_pin, temporary / "source.tar.gz")
         runtime = bundle / "runtime"
         unpack_runtime(runtime_tar, runtime)
         require((runtime / "version.tag").read_text().strip() == pin["release"],
@@ -245,9 +249,8 @@ def assemble(catalogue, output, runtime_archive=None, source_archive=None,
             verify_checksums(source_record / image_source)
             require(sha256(source_record / image_source / "SHA256SUMS")
                     == payload["source_checksums_sha256"], "Image source changed while copying")
-        (source_record / "upstream").mkdir()
-        shutil.copyfile(source_tar, source_record / "upstream/asahi-installer.tar.gz")
-        libffi_source = collect_runtime_sources(source_record, bundle, runtime_sources)
+        libffi_source = prepare_runtime_inputs(source_record, bundle,
+                                              temporary / "runtime-sources", runtime_sources)
         shutil.copyfile(source / "LICENSE", bundle / "notices/LICENSE.asahi-installer")
         notices = source_record / "packaging/macos/notices"
         for notice in json.loads((notices / "sources.json").read_text()):
@@ -289,62 +292,24 @@ def assemble(catalogue, output, runtime_archive=None, source_archive=None,
     return report
 
 
-def write_archive(directory, destination, name, additions=None):
+def write_archive(directory, destination, name):
     """Preserve ordinary files and framework links without host metadata."""
-    additions = additions or {}
     def normalise(member):
         member.uid = member.gid = member.mtime = 0
         member.uname = member.gname = ""
         member.pax_headers = {}
         return member
 
-    def select(member):
-        relative = member.name.removeprefix(name + "/")
-        return None if relative in additions else normalise(member)
-
     with destination.open("wb") as output, gzip.GzipFile(
             fileobj=output, filename="", mode="wb", mtime=0) as compressed:
         with tarfile.open(fileobj=compressed, mode="w") as archive:
-            archive.add(directory, arcname=name, filter=select)
-            for relative, content in sorted(additions.items()):
-                if isinstance(content, Path):
-                    archive.add(content, arcname=f"{name}/{relative}", filter=normalise)
-                else:
-                    member = tarfile.TarInfo(f"{name}/{relative}")
-                    member.size = len(content)
-                    archive.addfile(normalise(member), io.BytesIO(content))
-
-
-def check_guix_sources(path, package_output):
-    """Match a complete collector archive to the image's recorded build output."""
-    with gzip.open(path, "rb") as compressed, tarfile.open(fileobj=compressed, mode="r|") as archive:
-        first = archive.next()
-        require(first is not None and first.name == "guix-sources.json" and first.isfile(),
-                "Use the Guix source collector to create an archive with its manifest")
-        manifest = json.load(archive.extractfile(first))
-        require(manifest.get("format") == 1 and package_output in manifest["outputs"],
-                "Guix sources belong to a different image build")
-        expected = set(manifest["store_items"])
-        require(expected and Path(manifest["derivation"]).name in expected,
-                "Guix sources are missing their root derivation")
-        seen = set()
-        # Read the entire stream to catch truncation and missing source inputs.
-        for member in archive:
-            if member is first:
-                continue
-            parts = PurePosixPath(member.name).parts
-            require(parts and parts[0] in expected and ".." not in parts,
-                    f"Unexpected Guix source entry: {member.name}")
-            seen.add(parts[0])
-        require(seen == expected, "Guix source archive is incomplete")
-        # Tar ends before gzip's checksum and length trailer.
-        while compressed.read(1024 * 1024):
-            pass
+            archive.add(directory, arcname=name, filter=normalise)
 
 
 def check_assembly(assembly):
     bundle, source = assembly / "installer", assembly / "source"
     report = check_bundle(bundle)
+    source_files(source)
     verify_checksums(source)
     build = json.loads((source / "build.json").read_text())
     require(build.get("format") == 1
@@ -353,7 +318,7 @@ def check_assembly(assembly):
     return report
 
 
-def release(assembly, output, version, base_url, guix_sources):
+def release(assembly, output, version, base_url):
     """Package the checked bundle and a launcher that downloads this release through HTTPS."""
     require(re.fullmatch(r"[0-9][A-Za-z0-9.-]*", version), "Invalid release version")
     url = urlsplit(base_url)
@@ -370,21 +335,14 @@ def release(assembly, output, version, base_url, guix_sources):
             "Release version must match the catalogue version (optionally -rcN)")
     minimum_macos = report["minimum_macos"]
     require(type(minimum_macos) is int and minimum_macos >= 11, "Invalid minimum macOS version")
-    check_guix_sources(guix_sources, report["payload"]["package_output"])
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".release-", dir=output.parent) as temporary:
         directory = Path(temporary) / "release"
         directory.mkdir()
         archive = directory / f"hello-guix-{version}.tar.gz"
         write_archive(bundle, archive, "hello-guix")
-        source_hashes = file_hashes(source)
-        del source_hashes["SHA256SUMS"]
-        source_hashes["upstream/guix-build-sources.tar.gz"] = sha256(guix_sources)
         write_archive(source, directory / f"hello-guix-{version}-src.tar.gz",
-                      f"hello-guix-{version}-src", {
-                          "upstream/guix-build-sources.tar.gz": guix_sources,
-                          "SHA256SUMS": checksum_text(source_hashes).encode(),
-                      })
+                      f"hello-guix-{version}-src")
         template = (source / "src/hello-guix/installer/macos/bootstrap.sh").read_text()
         bootstrap = template.replace("@ARCHIVE_URL@", shlex.quote(base_url.rstrip("/") + "/" + archive.name))
         bootstrap = bootstrap.replace("@ARCHIVE_SHA256@", shlex.quote(sha256(archive)))
@@ -433,8 +391,6 @@ def main():
     saved.add_argument("--directory", required=True, type=Path)
     publish = commands.add_parser("release", help="package a bundle; does not upload or launch it")
     publish.add_argument("--assembly", required=True, type=Path)
-    publish.add_argument("--guix-sources", required=True, type=Path,
-                         help="complete source collector archive for this image")
     publish.add_argument("--output", required=True, type=Path)
     publish.add_argument("--version", required=True)
     publish.add_argument("--base-url", required=True, help="HTTPS directory where these files will be hosted")
@@ -447,7 +403,7 @@ def main():
             print(f"Installer assembled: {args.output / 'installer'}")
             print(f"Source prepared: {args.output / 'source'}")
         elif args.command == "release":
-            release(args.assembly, args.output, args.version, args.base_url, args.guix_sources)
+            release(args.assembly, args.output, args.version, args.base_url)
             print(f"Release files prepared: {args.output}. Nothing was uploaded or launched.")
             return
         elif args.command == "check-release":

@@ -20,7 +20,7 @@ import zipfile
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT / "scripts"))
 from asahi_payload import stage
-from build_inputs import record_snapshot, sha256, source_files
+from build_inputs import checksum_text, file_hashes, record_snapshot, sha256, source_files
 from macos_bundle import (assemble, build_libffi, check_assembly, check_bundle, check_catalogue,
                           inventory, main, release, unpack_runtime, verify_checksums)
 import payload_fixtures as fixtures
@@ -72,8 +72,9 @@ class MacOSBundleTests(unittest.TestCase):
         archive_files(certificates, {"certifi/cacert.pem": b"recorded certificates\n"})
         (self.project / "packaging/macos/runtime-sources.json").write_text(json.dumps({
             "files": [{"component": "certifi", "file": certificates.name,
-                       "sha256": sha256(certificates)},
+                       "sha256": sha256(certificates), "bytes": certificates.stat().st_size},
                       {"component": "libffi", "file": libffi.name, "sha256": sha256(libffi),
+                       "bytes": libffi.stat().st_size,
                        "notices": {"LICENSE.libffi": "libffi/LICENSE"}}],
             "certificates": {"archive": certificates.name, "member": "certifi/cacert.pem",
                              "runtime_path": "Frameworks/version/file"}}))
@@ -101,24 +102,10 @@ class MacOSBundleTests(unittest.TestCase):
         self.assembly = self.root / "assembly with spaces"
         self.output = self.assembly / "installer"
         self.source = self.assembly / "source"
-        self.guix_sources = self.root / "guix-sources.tar.gz"
-        self.guix_manifest = {
-            "format": 1, "derivation": "/gnu/store/fixture.drv",
-            "outputs": [str(package.resolve())],
-            "store_items": ["fixture.drv", "fixture-source"],
-        }
-        self.write_guix_sources()
         # Keep assembly tests portable; the native build is checked on macOS.
         builder = patch("macos_bundle.build_libffi", side_effect=self.replace_libffi)
         self.libffi_build = builder.start()
         self.addCleanup(builder.stop)
-
-    def write_guix_sources(self, include_source=True):
-        files = {"guix-sources.json": json.dumps(self.guix_manifest).encode(),
-                 "fixture.drv": b"derivation"}
-        if include_source:
-            files["fixture-source/code.c"] = b"source"
-        archive_files(self.guix_sources, files)
 
     def replace_libffi(self, archive, runtime, minimum_macos, cores=None):
         self.assertEqual(archive.read_bytes(), self.libffi_archive)
@@ -168,21 +155,20 @@ class MacOSBundleTests(unittest.TestCase):
         self.assembly = self.project / "local outputs/assembly"
         self.build()
         release_dir = self.root / "release"
-        release(self.assembly, release_dir, "0.1", "https://example.org/0.1",
-                self.guix_sources)
+        release(self.assembly, release_dir, "0.1", "https://example.org/0.1")
         extracted = self.root / "extracted"
         with tarfile.open(release_dir / "hello-guix-0.1-src.tar.gz") as archive:
             archive.extractall(extracted, filter="data")
         source = extracted / "hello-guix-0.1-src"
-        self.assertTrue((source / "image-source").is_dir())
-        self.assertTrue((source / "upstream").is_dir())
+        self.assertEqual(file_hashes(source / "image-source"), file_hashes(self.inputs))
+        self.assertFalse((source / "upstream").exists())
         self.assertTrue((source / "build.json").is_file())
         self.assertFalse((source / ".git").exists())
         snapshot = source / "build/source-record"
         record_snapshot(snapshot, source)
         self.assertEqual(source_files(source), source_files(snapshot))
         self.assertEqual((snapshot / "README.md").read_text(), "updated launcher source\n")
-        for name in ("image-source", "upstream", "build.json"):
+        for name in ("image-source", "build.json"):
             self.assertFalse((snapshot / name).exists())
 
     def test_only_installation_bundles_are_accepted(self):
@@ -208,8 +194,12 @@ class MacOSBundleTests(unittest.TestCase):
                           "philosophy.md", "channels.scm"})
         self.assertFalse((self.source / "image-source").exists())
         self.assertTrue((self.source / "tests/test_macos_bundle.py").is_file())
-        self.assertEqual(sha256(self.source / "upstream/asahi-installer.tar.gz"),
-                         sha256(self.source_tar))
+        self.assertFalse((self.source / "upstream").exists())
+        for name in ("asahi-installer-source.json", "asahi-installer-runtime.json",
+                     "runtime-sources.json"):
+            with self.subTest(pin=name):
+                self.assertEqual((self.source / "packaging/macos" / name).read_bytes(),
+                                 (self.project / "packaging/macos" / name).read_bytes())
         shutil.rmtree(self.source)
         self.assertEqual(check_bundle(self.output), report)
         subprocess.run([sys.executable, "-I", "-B", str(self.output / "libexec/bundle.py"),
@@ -230,8 +220,7 @@ class MacOSBundleTests(unittest.TestCase):
         self.assertTrue((self.output / "runtime/Frameworks/current").is_symlink())
         self.assertEqual((self.output / "runtime/Frameworks/current/file").read_bytes(),
                          b"recorded certificates\n")
-        self.assertEqual(sha256(self.source / "upstream/runtime/certifi.tar.gz"),
-                         sha256(self.runtime_sources / "certifi.tar.gz"))
+        self.assertFalse((self.source / "upstream").exists())
         for name in ("COPYING", "LICENSES/GPL-3.0-or-later.txt", "LICENSES/MIT.txt"):
             with self.subTest(name=name):
                 self.assertEqual((self.output / name).read_bytes(),
@@ -242,6 +231,46 @@ class MacOSBundleTests(unittest.TestCase):
         self.assertIn("SPDX-License-Identifier: MIT",
                       (self.output / "runtime/guix_boot.py").read_text())
         # REUSE-IgnoreEnd
+
+    def test_cached_runtime_inputs_are_reused_without_fetching_unused_sources(self):
+        path = self.project / "packaging/macos/runtime-sources.json"
+        manifest = json.loads(path.read_text())
+        # Tcl's sources are recorded upstream, but provide no files we consume.
+        manifest["files"].append({"component": "Tcl", "file": "tcl.tar.gz",
+                                  "sha256": "0" * 64, "bytes": 42,
+                                  "url": "https://invalid.example/unused"})
+        path.write_text(json.dumps(manifest))
+        cached = file_hashes(self.runtime_sources)
+        installer_inputs = {path: sha256(path) for path in (self.source_tar, self.runtime_tar)}
+        with patch("macos_bundle.urllib.request.urlopen") as download:
+            self.build()
+        download.assert_not_called()
+        self.assertEqual(file_hashes(self.runtime_sources), cached)
+        self.assertEqual({path: sha256(path) for path in installer_inputs}, installer_inputs)
+        self.assertFalse((self.source / "upstream").exists())
+        self.assertEqual((self.output / "notices/LICENSE.libffi").read_bytes(),
+                         self.upstream_notice)
+        self.assertEqual((self.output / "runtime/Frameworks/current/file").read_bytes(),
+                         b"recorded certificates\n")
+
+    def test_missing_required_cache_input_does_not_trigger_a_download(self):
+        (self.runtime_sources / "certifi.tar.gz").unlink()
+        with patch("macos_bundle.urllib.request.urlopen") as download:
+            with self.assertRaises(FileNotFoundError):
+                self.build()
+        download.assert_not_called()
+        self.libffi_build.assert_not_called()
+        self.assertFalse(self.output.exists())
+
+    def test_runtime_source_size_is_checked_before_use(self):
+        path = self.project / "packaging/macos/runtime-sources.json"
+        manifest = json.loads(path.read_text())
+        manifest["files"][1]["bytes"] += 1
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "size differs"):
+            self.build()
+        self.libffi_build.assert_not_called()
+        self.assertFalse(self.output.exists())
 
     def test_libffi_is_replaced_and_recorded(self):
         report = self.build()
@@ -270,6 +299,7 @@ class MacOSBundleTests(unittest.TestCase):
                 path = self.project / "packaging/macos/runtime-sources.json"
                 manifest = json.loads(path.read_text())
                 manifest["files"][1]["sha256"] = sha256(archive)
+                manifest["files"][1]["bytes"] = archive.stat().st_size
                 path.write_text(json.dumps(manifest))
                 with self.assertRaises(error):
                     self.build()
@@ -367,7 +397,7 @@ class MacOSBundleTests(unittest.TestCase):
     def test_release_preserves_bundle_and_pins_its_download(self):
         report = self.build()
         destination = self.root / "release"
-        release(self.assembly, destination, "0.1-rc2", "https://releases.example/0.1-rc2", self.guix_sources)
+        release(self.assembly, destination, "0.1-rc2", "https://releases.example/0.1-rc2")
         verify_checksums(destination)
         result = self.run_cli("check-release", "--directory", destination)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -393,8 +423,14 @@ class MacOSBundleTests(unittest.TestCase):
             stream.extractall(self.root / "source", filter="data")
         verify_checksums(self.root / "source/hello-guix-0.1-rc2-src")
         extracted = self.root / "source/hello-guix-0.1-rc2-src"
-        self.assertEqual(sha256(extracted / "upstream/guix-build-sources.tar.gz"),
-                         sha256(self.guix_sources))
+        expected = {name.as_posix() for name in source_files(self.project)}
+        self.assertEqual(set(file_hashes(extracted)), expected | {"SHA256SUMS", "build.json"})
+        self.assertEqual(file_hashes(extracted), file_hashes(self.source))
+        build = json.loads((extracted / "build.json").read_text())
+        self.assertEqual(build["payload"], report["payload"])
+        self.assertEqual(build["installer_sha256"], sha256(self.output / "bundle.json"))
+        self.assertEqual(build["image_source"], ".")
+        self.assertFalse((extracted / "upstream").exists())
         self.assertFalse((extracted / "runtime").exists())
         self.assertEqual(set(p.name for p in destination.iterdir()), {
             "hello-guix-0.1-rc2.tar.gz", "hello-guix-0.1-rc2-src.tar.gz",
@@ -404,8 +440,6 @@ class MacOSBundleTests(unittest.TestCase):
     def test_make_builds_and_checks_release_from_existing_assembly(self):
         self.build()
         destination = self.root / "release files"
-        sources = self.root / "Guix sources.tar.gz"
-        self.guix_sources.rename(sources)
         environment = {
             "PATH": os.defpath, "HOME": str(self.root), "TMPDIR": str(self.root),
             "PYTHON": sys.executable, "PYTHONDONTWRITEBYTECODE": "1",
@@ -418,7 +452,7 @@ class MacOSBundleTests(unittest.TestCase):
 
         # Everything needed is local; the URL is written into the launcher only.
         result = make("build", "release", assembly=self.assembly, release_dir=destination,
-                      guix_sources=sources, version="0.1", base_url="https://invalid.example")
+                      version="0.1", base_url="https://invalid.example")
         self.assertEqual(result.returncode, 0, result.stderr)
         for noun, settings in (("installer", {"assembly": self.assembly}),
                                ("release", {"release_dir": destination})):
@@ -430,30 +464,18 @@ class MacOSBundleTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Checksum inventory differs", result.stderr)
 
-    def test_release_requires_matching_complete_guix_sources(self):
+    def test_release_rejects_old_source_layout_even_with_valid_checksums(self):
         self.build()
+        upstream = self.source / "upstream"
+        upstream.mkdir()
+        shutil.copyfile(self.source_tar, upstream / "asahi-installer.tar.gz")
+        hashes = file_hashes(self.source)
+        del hashes["SHA256SUMS"]
+        (self.source / "SHA256SUMS").write_text(checksum_text(hashes))
+        verify_checksums(self.source)
         destination = self.root / "release"
-        self.guix_sources.unlink()
-        with self.assertRaises(FileNotFoundError):
-            release(self.assembly, destination, "0.1", "https://releases.example", self.guix_sources)
-        self.assertFalse(destination.exists())
-        self.guix_manifest["outputs"] = ["/gnu/store/some-other-image"]
-        self.write_guix_sources()
-        with self.assertRaisesRegex(ValueError, "different image"):
-            release(self.assembly, destination, "0.1", "https://releases.example", self.guix_sources)
-        self.assertFalse(destination.exists())
-        self.guix_manifest["outputs"] = [json.loads((self.output / "bundle.json").read_text())["payload"]["package_output"]]
-        self.write_guix_sources(include_source=False)
-        with self.assertRaisesRegex(ValueError, "incomplete"):
-            release(self.assembly, destination, "0.1", "https://releases.example", self.guix_sources)
-        self.assertFalse(destination.exists())
-
-    def test_release_rejects_truncated_source_compression(self):
-        self.build()
-        self.guix_sources.write_bytes(self.guix_sources.read_bytes()[:-8])
-        destination = self.root / "release"
-        with self.assertRaises(EOFError):
-            release(self.assembly, destination, "0.1", "https://releases.example", self.guix_sources)
+        with self.assertRaisesRegex(ValueError, "Unclassified project path: upstream"):
+            release(self.assembly, destination, "0.1", "https://releases.example")
         self.assertFalse(destination.exists())
 
     def test_release_rejects_changed_or_unpaired_project_sources(self):
@@ -463,13 +485,13 @@ class MacOSBundleTests(unittest.TestCase):
         original = readme.read_bytes()
         readme.write_text("changed after assembly")
         with self.assertRaisesRegex(ValueError, "inventory differs"):
-            release(self.assembly, destination, "0.1", "https://releases.example", self.guix_sources)
+            release(self.assembly, destination, "0.1", "https://releases.example")
         readme.write_bytes(original)
         report = json.loads((self.output / "bundle.json").read_text())
         report["minimum_macos"] = 27
         (self.output / "bundle.json").write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError, "Installer and source do not match"):
-            release(self.assembly, destination, "0.1", "https://releases.example", self.guix_sources)
+            release(self.assembly, destination, "0.1", "https://releases.example")
         self.assertFalse(destination.exists())
 
     def test_release_refuses_a_different_version(self):
@@ -477,7 +499,7 @@ class MacOSBundleTests(unittest.TestCase):
         destination = self.root / "release"
         for version in ("0.2", "0.10", "0.1-anything", "0.1-rc0"):
             with self.subTest(version=version), self.assertRaisesRegex(ValueError, "catalogue version"):
-                release(self.assembly, destination, version, "https://releases.example", self.guix_sources)
+                release(self.assembly, destination, version, "https://releases.example")
             self.assertFalse(destination.exists())
 
     def test_release_refuses_changed_bundle_or_insecure_host(self):
@@ -485,11 +507,11 @@ class MacOSBundleTests(unittest.TestCase):
         destination = self.root / "release"
         for url in ("http://releases.example", "file:///tmp", "https://user:password@releases.example"):
             with self.subTest(url=url), self.assertRaisesRegex(ValueError, "HTTPS"):
-                release(self.assembly, destination, "0.1", url, self.guix_sources)
+                release(self.assembly, destination, "0.1", url)
             self.assertFalse(destination.exists())
         (self.output / "runtime/main.py").write_text("changed")
         with self.assertRaisesRegex(ValueError, "runtime/main.py"):
-            release(self.assembly, destination, "0.1", "https://releases.example", self.guix_sources)
+            release(self.assembly, destination, "0.1", "https://releases.example")
         self.assertFalse(destination.exists())
 
     def test_bootstrap_reuses_verified_download_and_rejects_corruption(self):

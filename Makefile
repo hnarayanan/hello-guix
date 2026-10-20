@@ -18,7 +18,6 @@ source_archive ?=
 runtime_sources ?=
 version ?=
 base_url ?=
-guix_sources ?=
 
 export GUIX PYTHON
 export PYTHONDONTWRITEBYTECODE = 1
@@ -71,7 +70,7 @@ help:
 	  'Locations: build_dir, candidate, assembly, release_dir.' \
 	  'Resources: optional jobs and cores; otherwise use the build tools defaults.' \
 	  'Installer inputs: runtime_archive, source_archive, runtime_sources (optional).' \
-	  'Release inputs: version, base_url (HTTPS), guix_sources (required).' \
+	  'Release inputs: version, base_url (HTTPS).' \
 	  'Tools: GUIX, PYTHON. See docs/development.md for the complete flow.'
 
 _plan-image:
@@ -92,8 +91,7 @@ _build-installer:
 
 _build-release:
 	"$(PYTHON)" scripts/macos_bundle.py release --assembly "$(assembly)" \
-	  --output "$(release_dir)" --version "$(version)" --base-url "$(base_url)" \
-	  --guix-sources "$(guix_sources)"
+	  --output "$(release_dir)" --version "$(version)" --base-url "$(base_url)"
 
 _check-code:
 	bash scripts/check_code.sh "$(only)" "$(source_archive)"

@@ -21,8 +21,8 @@ SOURCE_FILES = (".gitignore", "COPYING", "Makefile", "NOTICE", "README.md")
 SOURCE_DIRECTORIES = ("LICENSES", "docs", "packaging", "patches", "scripts", "src", "tests")
 EXCLUDED_ENTRIES = (
     ".git", "build",
-    # Generated records and dependencies in saved or released source trees.
-    "SHA256SUMS", "build.json", "upstream", "image-source",
+    # Generated records and the original image source in released source trees.
+    "SHA256SUMS", "build.json", "image-source",
 )
 CACHE_NAMES = (".DS_Store", "__pycache__")
 

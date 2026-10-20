@@ -198,7 +198,7 @@ check the downloads before installing from them.
 Keep the same terminal open within each machine’s steps, so the paths
 you set remain available.
 
-### Freeze the candidate and collect its sources
+### Freeze the candidate
 
 In the Guix development shell, choose a fresh directory:
 
@@ -222,47 +222,10 @@ New top-level files and directories need to be classified in
 [`build_inputs.py`](../scripts/build_inputs.py). Keep generated files
 under `build_dir`.
 
-We also need the upstream sources and recipes used for this image.
-Select Guix using the candidate’s channel versions:
-
-```sh
-candidate=$(cd "$build_dir" && pwd -P) &&
-profile=$("$GUIX" time-machine \
-  -C "$candidate/source-record/packaging/guix/channels.scm") &&
-release_guix="$profile/bin/guix"
-```
-
-Find the image’s build recipe, called its *derivation*, and the source
-collector saved with the candidate:
-
-```sh
-derivation=$("$release_guix" gc --derivers \
-  "$(readlink -e "$candidate/payload")") &&
-collector="$candidate/source-record/scripts/source-archive.scm"
-```
-
-Preview the collection:
-
-```sh
-"$release_guix" repl "$collector" plan "$derivation"
-```
-
-Then create the archive. Keep this block together, so the final filename
-is used only after collection and compression succeed:
-
-```sh
-(
-set -euo pipefail
-"$release_guix" repl "$collector" archive "$derivation" |
-  gzip -n > "$candidate/guix-build-sources.tar.gz.part"
-mv "$candidate/guix-build-sources.tar.gz.part" \
-  "$candidate/guix-build-sources.tar.gz"
-)
-```
-
-Build-tool sources make this archive much larger than the installer.
-It contains source inputs and recipes, not an offline copy of the Guix
-store. Release assembly checks that it belongs to this image.
+The source download contains our code, patches, build instructions and
+upstream pins. The channel revisions lead to Guix’s package recipes,
+while the macOS manifests record upstream source URLs and checksums.
+Building from these sources fetches dependencies as needed.
 
 ### Assemble on macOS
 
@@ -291,9 +254,14 @@ both macOS 26.
 
 The result has an `installer/` directory ready to run and a `source/`
 directory for the source download. [NOTICE](../NOTICE) explains what
-each contains. Local runtime downloads can be reused through the
-`runtime_archive`, `source_archive` and `runtime_sources` settings.
-Their hashes are checked before use.
+each contains. A small `build.json` record identifies the sources used
+for the installer and image. If the image came from an earlier project
+snapshot, that snapshot is also kept in the source download.
+
+Reuse cached inputs through the `runtime_archive`, `source_archive` and
+`runtime_sources` settings. Their hashes are checked before use. These
+upstream archives are build inputs; they are not copied into the source
+download.
 
 Check the assembly:
 
@@ -313,14 +281,13 @@ installer and can change the Mac’s disk.
 ### Prepare and check the hosted download
 
 GitHub Releases or a static HTTPS server can host the downloads. Choose
-a new release directory outside the assembly, supply the Guix source
-archive from Linux, and replace the example URL with the release address:
+a new release directory outside the assembly and replace the example
+URL with the release address:
 
 ```sh
 release_dir=/absolute/path/to/release
 make -C "$assembly/source" build release \
   assembly="$assembly" release_dir="$release_dir" \
-  guix_sources=/absolute/path/to/guix-build-sources.tar.gz \
   version=0.1 base_url=https://your-host.example/releases/0.1
 ```
 
@@ -328,7 +295,7 @@ The version must match the image’s release version, optionally with an
 `-rcN` suffix. The command creates four files:
 
 - `hello-guix-0.1.tar.gz`, the installer.
-- `hello-guix-0.1-src.tar.gz`, the project and its dependency sources.
+- `hello-guix-0.1-src.tar.gz`, the project sources, pins and build record.
 - `install.sh`, the download launcher.
 - `SHA256SUMS`, their checksums.
 
