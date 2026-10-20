@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Let callers defer the completion page.
+
+A prepared-target caller must verify and unmount its destination before
+reporting success. Provide a completion callback and a reusable success page;
+the default keeps the standard installer flow and completion message.
+
+--- a/gnu/installer/newt/final.scm
++++ b/gnu/installer/newt/final.scm
+@@ -32,7 +32,7 @@
+   #:use-module (ice-9 match)
+   #:use-module ((ice-9 rdelim) #:select (read-line))
+   #:use-module (newt)
+-  #:export (run-final-page))
++  #:export (run-final-page run-install-success-page))
+ 
+ (define* (strip-prefix file #:optional (prefix (%installer-target-dir)))
+   "Strip PREFIX from FILE, if PREFIX actually is a prefix of FILE."
+@@ -62,15 +62,16 @@
+      (lambda ()
+        (abort-to-prompt 'installer-step 'abort)))))
+ 
+-(define (run-install-success-page)
++(define* (run-install-success-page
++          #:key (message (G_ "Congratulations!  Installation is now complete.  \
++You may remove the device containing the installation image and \
++press the button to reboot.")))
+   (match (current-clients)
+     (()
+      (message-window
+       (G_ "Installation complete")
+       (G_ "Reboot")
+-      (G_ "Congratulations!  Installation is now complete.  \
+-You may remove the device containing the installation image and \
+-press the button to reboot.")))
++      message))
+     (_
+      ;; When there are clients connected, send them a message and keep going.
+      (send-to-clients '(installation-complete))))
+@@ -107,7 +108,8 @@
+     (newt-resume)
+     install-ok?))
+ 
+-(define* (run-final-page-install result prev-steps #:key configuration)
++(define* (run-final-page-install result prev-steps
++                                 #:key configuration (on-success run-install-success-page))
+   (define (wait-for-clients)
+     (unless (null? (current-clients))
+       (installer-log-line "waiting with clients before starting final step")
+@@ -133,10 +135,11 @@
+            (run-config-display-page #:locale locale)
+            (run-install-shell locale #:users users))))
+     (if install-ok?
+-        (run-install-success-page)
++        (on-success)
+         (run-install-failed-page))))
+ 
+-(define* (dry-run-final-page result prev-steps #:key configuration)
++(define* (dry-run-final-page result prev-steps
++                             #:key configuration (on-success run-install-success-page))
+   (installer-log-line "proceeding with final step -- dry-run")
+   (let* ((configuration   (or configuration
+                               (format-configuration prev-steps result)))
+@@ -146,10 +149,16 @@
+          (file            (configuration->file configuration))
+          (install-ok?     (run-config-display-page #:locale locale)))
+     (if install-ok?
+-        (run-install-success-page)
++        (on-success)
+         (run-install-failed-page))))
+ 
+-(define* (run-final-page result prev-steps dry-run? #:key configuration)
++(define* (run-final-page result prev-steps dry-run?
++                         #:key configuration (on-success run-install-success-page))
++  "Review and install the configuration, then call ON-SUCCESS.
++A caller managing additional installation resources can defer the completion
++page until those resources have been checked and released."
+   (if dry-run?
+-      (dry-run-final-page result prev-steps #:configuration configuration)
+-      (run-final-page-install result prev-steps #:configuration configuration)))
++      (dry-run-final-page result prev-steps #:configuration configuration
++                          #:on-success on-success)
++      (run-final-page-install result prev-steps #:configuration configuration
++                              #:on-success on-success)))

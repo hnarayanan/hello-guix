@@ -1,0 +1,12 @@
+[
+  {
+    "file": "LICENSE.python-asn1",
+    "url": "https://raw.githubusercontent.com/andrivet/python-asn1/v2.5.0/LICENSE",
+    "sha256": "ecc31373c0b5c0e8633f038e73dafd1b89d3011e0c822106215ae7f0b730a145"
+  },
+  {
+    "file": "python-asn1-AUTHORS.rst",
+    "url": "https://raw.githubusercontent.com/andrivet/python-asn1/v2.5.0/AUTHORS.rst",
+    "sha256": "5a862bfd2093d27a07ba4b43eeff9f1b8cafce44e7ea2d3c257de4bfcb8c8e4f"
+  }
+]

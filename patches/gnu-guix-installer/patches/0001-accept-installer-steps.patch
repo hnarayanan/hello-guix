@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Accept a caller-supplied step list.
+
+Expose installer-script's existing step-list argument through installer-program.
+The default stays unchanged; a prepared-target installer can reuse the normal
+questions and formatters without duplicating the runner.
+
+--- a/gnu/installer.scm
++++ b/gnu/installer.scm
+@@ -373,8 +373,11 @@
+             `(channel ,(channel-name channel) ,(channel-commit channel)))
+           channels))))
+ 
+-(define* (installer-program #:key dry-run? (guix-for-installer (current-guix)))
+-  "Return a file-like object that runs the given INSTALLER."
++(define* (installer-program #:key dry-run? (guix-for-installer (current-guix))
++                            (steps (installer-steps #:dry-run? dry-run?)))
++  "Return a file-like object that runs the graphical installer.
++STEPS is a gexp yielding a procedure that accepts an installer record and
++returns its list of installer steps.  The default is the standard flow."
+   (define init-gettext
+     ;; Initialize gettext support, so that installer messages can be
+     ;; translated.
+@@ -407,7 +410,6 @@
+           (lambda ()
+             (set-path-environment-variable "PATH" '("bin" "sbin") inputs)))))
+ 
+-  (define steps (installer-steps #:dry-run? dry-run?))
+   (define modules
+     (scheme-modules*
+      (string-append (current-source-directory) "/..")

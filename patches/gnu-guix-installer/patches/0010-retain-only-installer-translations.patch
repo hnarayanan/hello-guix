@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Retain translations without a second Guix.
+
+The caller may supply a channel-built Guix different from the guix package.
+Keep that package's translations, without retaining its entire runtime just
+for bindtextdomain. Copying keeps the existing translations unchanged.
+
+--- a/gnu/installer.scm
++++ b/gnu/installer.scm
+@@ -378,11 +378,20 @@
+   "Return a file-like object that runs the graphical installer.
+ STEPS is a gexp yielding a procedure that accepts an installer record and
+ returns its list of installer steps.  The default is the standard flow."
++  (define translations
++    (computed-file "guix-installer-translations"
++      (with-imported-modules '((guix build utils))
++        #~(begin
++            (use-modules (guix build utils))
++            (copy-recursively #$(file-append guix "/share/locale")
++                              #$output)))
++      #:options '(#:allowed-references ())))
++
+   (define init-gettext
+     ;; Initialize gettext support, so that installer messages can be
+     ;; translated.
+     #~(begin
+-        (bindtextdomain "guix" (string-append #$guix "/share/locale"))
++        (bindtextdomain "guix" #$translations)
+         (textdomain "guix")
+         (setlocale LC_ALL "")))
+ 

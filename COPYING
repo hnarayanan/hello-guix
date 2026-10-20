@@ -1,0 +1,37 @@
+SPDX-FileCopyrightText: 2026 Harish Narayanan
+SPDX-License-Identifier: GPL-3.0-or-later
+
+Hello Guix is free software. Licences follow the component, so contributions
+can be shared with the projects they extend.
+
+Most original Hello Guix source and documentation is available under the
+GNU General Public License, version 3 or (at your option) any later version.
+The full text is in LICENSES/GPL-3.0-or-later.txt.
+
+The following separable Asahi installer contributions are available under MIT:
+
+  patches/asahi-macos-installer/patches/0001-initialize-guix-boot-choice.patch
+  patches/asahi-macos-installer/overlay/guix_boot.py
+  tests/test_boot.py
+  src/hello-guix/installer/macos/bootstrap.sh
+
+Its licence text is in LICENSES/MIT.txt. The surrounding Hello Guix build
+and launch tools remain GPL-3.0-or-later. Our changes to GNU Guix and the
+Asahi Guix image builder use GPL-3.0-or-later, following their source.
+
+SPDX declarations identify the applicable licence and copyright notices.
+Files that cannot carry comments have adjacent plain-text .license files
+with the same SPDX notices, following the REUSE standard. These project
+declarations do not replace existing upstream terms or attribution; patch
+context remains the work of its original authors. Standard licence templates
+may contain copyright placeholders; the actual notices accompany each file.
+
+Downloaded components and their notices keep their own licences.
+NOTICE points to their licences and the matching source download.
+Packages inside the Guix image also retain their own terms. A component's
+source obligations are not satisfied merely by listing its licence or
+upstream URL.
+
+Our standards for readable, maintainable contributions are described in
+docs/philosophy.md. They guide project review and add no restrictions to
+the rights granted by these licences.

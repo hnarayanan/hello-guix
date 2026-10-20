@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Use safe-clone for commands in the mount container.
+
+install-system calls this runner inside run-container. With Guile 3.0.11,
+primitive-fork can hang after entering that container. Use the same safe-clone workaround as (gnu build linux-container),
+keeping the existing pseudoterminal, command and wait status handling.
+
+See https://codeberg.org/guix/guix/issues/7690#issuecomment-12744123.
+
+--- a/gnu/installer/utils.scm
++++ b/gnu/installer/utils.scm
+@@ -21,7 +21,7 @@
+ (define-module (gnu installer utils)
+   #:use-module (gnu services herd)
+   #:use-module (guix utils)
+-  #:use-module ((guix build syscalls) #:select (openpty login-tty))
++  #:use-module ((guix build syscalls) #:select (openpty login-tty safe-clone))
+   #:use-module (guix build utils)
+   #:use-module (guix i18n)
+   #:use-module (srfi srfi-1)
+@@ -136,8 +136,10 @@
+   (define-values (controller inferior)
+     (openpty))
+ 
+-  (match (primitive-fork)
+-    (0
++  ;; Match the Guile 3.0.11 workaround in (gnu build linux-container):
++  ;; primitive-fork can hang in the child of run-container.
++  (safe-clone SIGCHLD
++    (lambda ()
+      (catch #t
+        (lambda ()
+          (close-fdes controller)
+@@ -145,7 +147,7 @@
+          (apply execlp (car command) command))
+        (lambda _
+          (primitive-exit 127))))
+-    (pid
++    (lambda (pid)
+      (close-fdes inferior)
+      (let* ((port (fdopen controller "r0"))
+             (result (false-if-exception

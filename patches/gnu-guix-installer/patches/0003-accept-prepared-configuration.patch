@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Accept prepared configuration forms on the final page.
+
+Allow a caller to supply configuration forms for an already prepared target.
+Guix still owns configuration review and editing, account setup and installation.
+Omitting the argument retains the ordinary configuration writer.
+
+--- a/gnu/installer/newt/final.scm
++++ b/gnu/installer/newt/final.scm
+@@ -107,7 +107,7 @@
+     (newt-resume)
+     install-ok?))
+ 
+-(define (run-final-page-install result prev-steps)
++(define* (run-final-page-install result prev-steps #:key configuration)
+   (define (wait-for-clients)
+     (unless (null? (current-clients))
+       (installer-log-line "waiting with clients before starting final step")
+@@ -121,7 +121,8 @@
+   (wait-for-clients)
+ 
+   (installer-log-line "proceeding with final step")
+-  (let* ((configuration   (format-configuration prev-steps result))
++  (let* ((configuration   (or configuration
++                              (format-configuration prev-steps result)))
+          (user-partitions (result-step result 'partition))
+          (locale          (result-step result 'locale))
+          (users           (result-step result 'user))
+@@ -135,9 +136,10 @@
+         (run-install-success-page)
+         (run-install-failed-page))))
+ 
+-(define (dry-run-final-page result prev-steps)
++(define* (dry-run-final-page result prev-steps #:key configuration)
+   (installer-log-line "proceeding with final step -- dry-run")
+-  (let* ((configuration   (format-configuration prev-steps result))
++  (let* ((configuration   (or configuration
++                              (format-configuration prev-steps result)))
+          (user-partitions (result-step result 'partition))
+          (locale          (result-step result 'locale))
+          (users           (result-step result 'user))
+@@ -147,7 +149,7 @@
+         (run-install-success-page)
+         (run-install-failed-page))))
+ 
+-(define (run-final-page result prev-steps dry-run?)
++(define* (run-final-page result prev-steps dry-run? #:key configuration)
+   (if dry-run?
+-      (dry-run-final-page result prev-steps)
+-      (run-final-page-install result prev-steps)))
++      (dry-run-final-page result prev-steps #:configuration configuration)
++      (run-final-page-install result prev-steps #:configuration configuration)))

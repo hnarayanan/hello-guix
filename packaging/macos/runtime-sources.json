@@ -1,0 +1,179 @@
+{
+  "files": [
+    {
+      "component": "python",
+      "file": "Python-3.13.9.tar.xz",
+      "url": "https://www.python.org/ftp/python/3.13.9/Python-3.13.9.tar.xz",
+      "sha256": "ed5ef34cda36cfa2f3a340f07cac7e7814f91c7f3c411f6d3562323a866c5c66",
+      "bytes": 22681368,
+      "notices": {
+        "LICENSE.python-third-party": "Python-3.13.9/Doc/license.rst"
+      }
+    },
+    {
+      "component": "openssl",
+      "file": "openssl-3.0.18.tar.gz",
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.0.18/openssl-3.0.18.tar.gz",
+      "sha256": "d80c34f5cf902dccf1f1b5df5ebb86d0392e37049e5d73df1b3abae72e4ffe8b",
+      "bytes": 15348046,
+      "notices": {
+        "LICENSE.openssl": "openssl-3.0.18/LICENSE.txt"
+      }
+    },
+    {
+      "component": "tcl",
+      "file": "tcl8.6.17-src.tar.gz",
+      "url": "https://prdownloads.sourceforge.net/tcl/tcl8.6.17-src.tar.gz",
+      "sha256": "a3903371efcce8a405c5c245d029e9f6850258a60fa3761c4d58995610949b31",
+      "bytes": 11724552
+    },
+    {
+      "component": "tk",
+      "file": "tk8.6.17-src.tar.gz",
+      "url": "https://prdownloads.sourceforge.net/tcl/tk8.6.17-src.tar.gz",
+      "sha256": "e4982df6f969c08bf9dd858a6891059b4a3f50dc6c87c10abadbbe2fc4838946",
+      "bytes": 4593109
+    },
+    {
+      "component": "xz",
+      "file": "xz-5.2.3.tar.gz",
+      "url": "https://tukaani.org/xz/xz-5.2.3.tar.gz",
+      "sha256": "71928b357d0a09a12a4b4c5fafca8c31c19b0e7d3b8ebb19622e96f26dbf28cb",
+      "bytes": 1490665,
+      "notices": {
+        "LICENSE.xz": "xz-5.2.3/COPYING"
+      }
+    },
+    {
+      "component": "ncurses",
+      "file": "ncurses-6.5.tar.gz",
+      "url": "https://ftp.gnu.org/gnu/ncurses/ncurses-6.5.tar.gz",
+      "sha256": "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6",
+      "bytes": 3688489,
+      "notices": {
+        "LICENSE.ncurses": "ncurses-6.5/COPYING"
+      }
+    },
+    {
+      "component": "sqlite",
+      "file": "sqlite-autoconf-3500400.tar.gz",
+      "url": "https://www.sqlite.org/2025/sqlite-autoconf-3500400.tar.gz",
+      "sha256": "a3db587a1b92ee5ddac2f66b3edb41b26f9c867275782d46c3a088977d6a5b18",
+      "bytes": 3173050
+    },
+    {
+      "component": "mpdecimal",
+      "file": "mpdecimal-4.0.0.tar.gz",
+      "url": "https://www.bytereef.org/software/mpdecimal/releases/mpdecimal-4.0.0.tar.gz",
+      "sha256": "942445c3245b22730fd41a67a7c5c231d11cb1b9936b9c0f76334fb7d0b4468c",
+      "bytes": 315325,
+      "notices": {
+        "LICENSE.mpdecimal": "mpdecimal-4.0.0/COPYRIGHT.txt"
+      }
+    },
+    {
+      "component": "libffi",
+      "file": "libffi-3.5.2.tar.gz",
+      "url": "https://github.com/libffi/libffi/releases/download/v3.5.2/libffi-3.5.2.tar.gz",
+      "sha256": "f3a3082a23b37c293a4fcd1053147b371f2ff91fa7ea1b2a52e335676bac82dc",
+      "bytes": 1423124,
+      "notices": {
+        "LICENSE.libffi": "libffi-3.5.2/LICENSE"
+      }
+    },
+    {
+      "component": "m1n1",
+      "file": "m1n1-06a4601.tar.gz",
+      "url": "https://codeload.github.com/AsahiLinux/m1n1/tar.gz/06a4601a351ebfd1abb6abba9a44c34e40d94776",
+      "sha256": "9d6972d3edaff856e985f2b1feb64fcf9b42fc5eecda7be64a242b49bbbe636d",
+      "bytes": 938742,
+      "notices": {
+        "m1n1/LICENSE": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/LICENSE",
+        "m1n1/README.md": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/README.md",
+        "m1n1/3rdparty_licenses/LICENSE.BSD-2.libfdt": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/3rdparty_licenses/LICENSE.BSD-2.libfdt",
+        "m1n1/3rdparty_licenses/LICENSE.BSD-3.arm": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/3rdparty_licenses/LICENSE.BSD-3.arm",
+        "m1n1/3rdparty_licenses/LICENSE.BSD-3.dwc3": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/3rdparty_licenses/LICENSE.BSD-3.dwc3",
+        "m1n1/3rdparty_licenses/LICENSE.CC0": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/3rdparty_licenses/LICENSE.CC0",
+        "m1n1/3rdparty_licenses/LICENSE.GPL-2": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/3rdparty_licenses/LICENSE.GPL-2",
+        "m1n1/3rdparty_licenses/LICENSE.OFL-1.1": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/3rdparty_licenses/LICENSE.OFL-1.1",
+        "m1n1/3rdparty_licenses/LICENSE.minlzma": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/3rdparty_licenses/LICENSE.minlzma",
+        "m1n1/3rdparty_licenses/LICENSE.tinf": "m1n1-06a4601a351ebfd1abb6abba9a44c34e40d94776/3rdparty_licenses/LICENSE.tinf"
+      }
+    },
+    {
+      "component": "m1n1-artwork",
+      "file": "artwork-80d14f8.tar.gz",
+      "url": "https://codeload.github.com/AsahiLinux/artwork/tar.gz/80d14f8b6f485b310e305a84b4b806361518ddd1",
+      "sha256": "f2b18744a38d1369a8e9e59acddd12551c5500435fbd9e709fe7a6b212a070ac",
+      "bytes": 1615335
+    },
+    {
+      "component": "installer-artwork",
+      "file": "artwork-634948f.tar.gz",
+      "url": "https://codeload.github.com/AsahiLinux/artwork/tar.gz/634948f40aea08fafde8f5fe8f4221c248a7df46",
+      "sha256": "0775946592c3e24178e2ee9d52bfb31def28c9bcf02d5b91dbf37f0e50165b34",
+      "bytes": 1109440,
+      "notices": {
+        "LICENSE.artwork": "artwork-634948f40aea08fafde8f5fe8f4221c248a7df46/logos/LICENSE"
+      }
+    },
+    {
+      "component": "fatfs",
+      "file": "rust-fatfs-4eccb50.tar.gz",
+      "url": "https://codeload.github.com/rafalh/rust-fatfs/tar.gz/4eccb50d011146fbed20e133d33b22f3c27292e7",
+      "sha256": "06302558ed3878e70e51109648e2972faf8ec444c352c31f8272a55d93850e95",
+      "bytes": 102489,
+      "notices": {
+        "LICENSE.fatfs": "rust-fatfs-4eccb50d011146fbed20e133d33b22f3c27292e7/LICENSE.txt"
+      }
+    },
+    {
+      "component": "bitflags",
+      "file": "bitflags-2.13.0.crate",
+      "url": "https://static.crates.io/crates/bitflags/bitflags-2.13.0.crate",
+      "sha256": "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8",
+      "bytes": 51280,
+      "notices": {
+        "LICENSE.bitflags-MIT": "bitflags-2.13.0/LICENSE-MIT",
+        "LICENSE.bitflags-APACHE": "bitflags-2.13.0/LICENSE-APACHE"
+      }
+    },
+    {
+      "component": "log",
+      "file": "log-0.4.33.crate",
+      "url": "https://static.crates.io/crates/log/log-0.4.33.crate",
+      "sha256": "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad",
+      "bytes": 52997,
+      "notices": {
+        "LICENSE.log-MIT": "log-0.4.33/LICENSE-MIT",
+        "LICENSE.log-APACHE": "log-0.4.33/LICENSE-APACHE"
+      }
+    },
+    {
+      "component": "uuid",
+      "file": "uuid-1.23.4.crate",
+      "url": "https://static.crates.io/crates/uuid/uuid-1.23.4.crate",
+      "sha256": "bf80a72845275afea99e7f2b434723d3bc7e38470fcd1c7ed39a599c73319a53",
+      "bytes": 62165,
+      "notices": {
+        "LICENSE.uuid-MIT": "uuid-1.23.4/LICENSE-MIT",
+        "LICENSE.uuid-APACHE": "uuid-1.23.4/LICENSE-APACHE"
+      }
+    },
+    {
+      "component": "certifi",
+      "file": "certifi-2026.7.22.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz",
+      "sha256": "741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55",
+      "bytes": 138112,
+      "notices": {
+        "LICENSE.certifi": "certifi-2026.7.22/LICENSE"
+      }
+    }
+  ],
+  "certificates": {
+    "archive": "certifi-2026.7.22.tar.gz",
+    "member": "certifi-2026.7.22/certifi/cacert.pem",
+    "runtime_path": "Frameworks/Python.framework/Versions/3.13/etc/openssl/cert.pem"
+  }
+}

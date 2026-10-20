@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Account for brcmfmac firmware supplied by this image.
+
+Hello Guix receives this Mac's device firmware from Asahi before Linux boots.
+Do not report its brcmfmac device as unusable solely because that firmware is
+not included by GNU Guix. This is downstream image policy, not a proposal to
+change Guix's free-software policy. Other unsupported-device warnings remain.
+
+--- a/gnu/installer/hardware.scm
++++ b/gnu/installer/hardware.scm
+@@ -34,7 +34,6 @@
+   ;; non-free firmware available from
+   ;; <https://packages.debian.org/search?keywords=firmware&searchon=names&suite=stable&section=all>.
+   '(;; WiFi.
+-    "brcmfmac"
+     "ipw2100"
+     "ipw2200"
+     "iwlwifi"

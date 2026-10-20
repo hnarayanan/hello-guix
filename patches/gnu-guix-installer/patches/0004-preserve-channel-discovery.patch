@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Keep the Guix executable path discoverable.
+
+A trailing slash in PATH makes run-command resolve guix as bin//guix.
+Guix's find-profile requires the suffix /bin/guix, so this spelling loses
+additional channels when system init reads the generated configuration.
+Use the ordinary directory spelling; the installation flow is unchanged.
+
+--- a/gnu/installer/final.scm
++++ b/gnu/installer/final.scm
+@@ -228,7 +228,7 @@
+              (setvbuf (current-output-port) 'none)
+              (setvbuf (current-error-port) 'none)
+ 
+-             (setenv "PATH" "/run/current-system/profile/bin/")
++             (setenv "PATH" "/run/current-system/profile/bin")
+ 
+              (for-each (lambda (line)
+                          (installer-log-line "~a" line))

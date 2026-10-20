@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Prefer the packaged installer modules to Guix's copy.
+
+The Guix extension supplies system and package definitions, but also contains
+an installer. Gexp's load-path construction puts that extension before the
+imported modules. Move it behind them so the packaged installer runs the
+sources it was built from. Keep source and compiled lookup in the same order.
+
+--- a/gnu/installer.scm
++++ b/gnu/installer.scm
+@@ -430,5 +430,20 @@
+                                ((guix config) => ,(make-config.scm)))
+         #~(begin
++            ;; The Guix extension supplies packages and services. The imported
++            ;; modules supply this installer, including any local adaptations.
++            (eval-when (expand load eval)
++              (let ((source (string-append #$guix-for-installer
++                                           "/share/guile/site/"
++                                           (effective-version)))
++                    (compiled (string-append #$guix-for-installer
++                                             "/lib/guile/"
++                                             (effective-version)
++                                             "/site-ccache")))
++                (set! %load-path
++                  (append (delete source %load-path) (list source)))
++                (set! %load-compiled-path
++                  (append (delete compiled %load-compiled-path)
++                          (list compiled)))))
+             (use-modules (gnu installer record)
+                          (gnu installer keymap)
+                          (gnu installer steps)

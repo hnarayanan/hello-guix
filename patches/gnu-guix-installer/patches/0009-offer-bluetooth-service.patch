@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Offer Bluetooth as an optional networking service.
+
+Use the existing service-choice page and bluetooth-service-type. Selecting
+a desktop does not otherwise add the Bluetooth daemon, so its settings panel
+cannot enable a controller until this optional system service is installed.
+
+--- a/gnu/installer/services.scm
++++ b/gnu/installer/services.scm
+@@ -115,6 +115,10 @@
+                      '("sway" "wmenu" "foot"))))
+ 
+      ;; Networking.
++     (system-service
++      (name (G_ "Bluetooth wireless device support"))
++      (type 'networking)
++      (snippet '((service bluetooth-service-type))))
+      (system-service
+       (name (G_ "OpenSSH secure shell daemon (sshd)"))
+       (type 'networking)

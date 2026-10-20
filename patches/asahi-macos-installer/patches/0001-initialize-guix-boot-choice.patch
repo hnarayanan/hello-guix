@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: MIT
+
+Choose the new Guix EFI loader explicitly before its first boot.
+
+Opt in through catalogue metadata; other OS entries are unchanged.
+The encoder is maintained as overlay/guix_boot.py.
+
+--- a/src/osinstall.py
++++ b/src/osinstall.py
+@@ -2,6 +2,7 @@
+ import os, shutil, sys, stat, subprocess, urlcache, zipfile, logging
+ 
+ import m1n1
++from guix_boot import initialize_boot
+ from util import *
+ import unicodedata
+ 
+@@ -172,6 +173,12 @@
+                 os.makedirs(data_path, exist_ok=True)
+                 self.idata_targets.append(data_path)
+ 
++        if self.template.get("guix_boot") is True:
++            if len(self.part_info) != 2:
++                raise ValueError("Hello Guix requires EFI and Linux target partitions")
++            initialize_boot(self.dutil.mount(self.efi_part.name), self.efi_part,
++                            self.part_info[1], self.template["guix_root_image"])
++
+         if "extras" in self.template:
+             assert self.efi_part is not None
+             self.download_extras()

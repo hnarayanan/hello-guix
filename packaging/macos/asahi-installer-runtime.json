@@ -1,0 +1,20 @@
+{
+  "project": "https://github.com/AsahiLinux/asahi-installer",
+  "release": "v0.9.2",
+  "minimum_macos": 26,
+  "url": "https://cdn.asahilinux.org/installer/installer-v0.9.2.tar.gz",
+  "bytes": 22215466,
+  "sha256": "484d999e53b4aef27d17c4478e49567e96842f8a6cb35c073a0df5bf0bbe8276",
+  "source_commit": "dffbb38ef0c00c0431c609ecd8a00f42deb5b24c",
+  "submodule_commits": {
+    "m1n1": "06a4601a351ebfd1abb6abba9a44c34e40d94776",
+    "artwork": "634948f40aea08fafde8f5fe8f4221c248a7df46"
+  },
+  "files": {
+    "boot/m1n1.bin": "9ff1a82396e792052901aa52a02965cbe91892be891b43d583394f87bdd97945",
+    "logo.icns": "9484739bd68427e7942b027dc44dcf6ea50e26c2831191e87eb448fa60683a19",
+    "Frameworks/Python.framework/Versions/3.13/lib/libffi.8.dylib": "7e4d3aee6d6559a734adfdeddb4ce27d4246e96df870d5bb48bc7c0eb61abc99",
+    "Frameworks/Python.framework/Versions/3.13/etc/openssl/cert.pem": "ecd9dc38bc3efb7dbd6431f57e29d2f8d6a0f0d211e1464b3fef2cbfe266fcd2"
+  },
+  "status": "Pinned input runtime. Bundle assembly rebuilds libffi from upstream source and replaces the certificate bundle; the remaining binaries are reused."
+}

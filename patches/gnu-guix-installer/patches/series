@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+0001-accept-installer-steps.patch
+0002-keep-users-after-empty-list-warning.patch
+0003-accept-prepared-configuration.patch
+0004-preserve-channel-discovery.patch
+0005-safe-installer-command.patch
+0006-prefer-installer-modules.patch
+0007-account-for-asahi-firmware.patch
+0008-defer-installation-completion.patch
+0009-offer-bluetooth-service.patch
+0010-retain-only-installer-translations.patch

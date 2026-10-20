@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Return users entered after the empty-list warning.
+
+The recursive user page can return a valid account list after its warning.
+Return that result so the caller retains the accounts the user just entered.
+
+--- a/gnu/installer/newt/user.scm
++++ b/gnu/installer/newt/user.scm
+@@ -263,11 +263,12 @@
+                                       listbox-elements))))
+                    (run users)))
+                 ((components=? argument ok-button)
+-                 (when (null? users)
+-                   (run-error-page (G_ "Please create at least one user.")
+-                                   (G_ "No user"))
+-                   (run users))
+-                 (reverse users))
++                 (if (null? users)
++                     (begin
++                       (run-error-page (G_ "Please create at least one user.")
++                                       (G_ "No user"))
++                       (run users))
++                     (reverse users)))
+                 ((components=? argument exit-button)
+                  (abort-to-prompt 'installer-step 'abort))))
+               ('exit-fd-ready

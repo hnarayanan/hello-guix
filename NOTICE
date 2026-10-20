@@ -1,0 +1,21 @@
+SPDX-FileCopyrightText: 2026 Harish Narayanan
+SPDX-License-Identifier: GPL-3.0-or-later
+
+Installer licences and sources
+
+Each release provides two downloads with the same version number.
+
+The installer download, hello-guix-VERSION.tar.gz, extracts to hello-guix/.
+Inside that folder, COPYING explains Hello Guix’s licensing, LICENSES/
+holds the licence texts, and notices/ contains upstream licences and
+credits. Python, Tcl and Tk also retain licence files under runtime/.
+Packages inside the Guix image retain their own terms.
+
+The matching source download, hello-guix-VERSION-src.tar.gz, extracts to
+hello-guix-VERSION-src/. The project source is at the top of this folder,
+with build instructions in docs/development.md. Sources for Asahi’s
+installer, the macOS runtime and the Guix image are under upstream/.
+
+All paths above refer to the extracted downloads. Apple’s device firmware
+is collected from the target Mac during installation and is not included
+in either download.

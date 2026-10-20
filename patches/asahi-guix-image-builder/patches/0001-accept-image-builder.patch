@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Harish Narayanan
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Accept a distribution image builder.
+
+--- a/asahi/guix/build-system/installer.scm
++++ b/asahi/guix/build-system/installer.scm
+@@ -72,6 +72,8 @@
+                           guile source
+                           (os-description "Asahi Guix")
+                           (os-name "Asahi Guix")
++                          (image-builder (lambda (name os)
++                                           (system-image (make-installer-image name os))))
+                           (outputs '("out"))
+                           (search-paths '())
+                           (out-of-source? #t)
+@@ -97,7 +99,7 @@
+             #$(with-build-variables inputs outputs
+                 #~(installer-build
+                    #:name #$name
+-                   #:source #+(system-image (make-installer-image (string->symbol name) source))
++                   #:source #+(image-builder (string->symbol name) source)
+                    #:system #$system
+                    #:os-name #$os-name
+                    #:os-description #$os-description
