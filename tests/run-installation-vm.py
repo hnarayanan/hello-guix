@@ -70,7 +70,11 @@ def main():
     parser.add_argument("--firmware", required=True, type=Path)
     parser.add_argument("--output", type=Path, default=Path("build"))
     parser.add_argument("--timeout", type=int, default=7200)
+    parser.add_argument("--memory", type=int, default=6144,
+                        help="guest RAM in MiB (default: 6144)")
     args = parser.parse_args()
+    if args.memory <= 0:
+        parser.error("Guest memory must be a positive number of MiB")
     if os.getuid() == 0:
         parser.error("Run as an ordinary user, without sudo")
     fixture = args.fixture.resolve()
@@ -87,9 +91,10 @@ def main():
     shutil.copyfile(fixture / "disk.qcow2", disk)
     disk.chmod(0o600)
     accel = "hvf" if mac else ("kvm" if os.access("/dev/kvm", os.W_OK) else "tcg")
-    print(f"Virtual machine: {accel}, 6 GiB RAM. Logs stay in the records directory.", flush=True)
+    print(f"Virtual machine: {accel}, {args.memory} MiB RAM. "
+          "Logs stay in the records directory.", flush=True)
     base = [args.qemu, "-machine", "virt,acpi=off", "-accel", accel,
-            "-cpu", "max" if accel == "tcg" else "host", "-m", "6144", "-smp", "2"]
+            "-cpu", "max" if accel == "tcg" else "host", "-m", str(args.memory), "-smp", "2"]
     dtb = records / "virt.dtb"
     subprocess.run([*base, "-machine", f"dumpdtb={dtb}", "-display", "none", "-nic", "none"], check=True)
     subprocess.run([args.fdtput, "-t", "s", str(dtb), "/chosen", "asahi,efi-system-partition",

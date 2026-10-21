@@ -214,13 +214,23 @@ for argument in args:
     def calls(self):
         return [json.loads(line) for line in (self.root / "calls").read_text().splitlines()]
 
-    def test_development_builds_follow_edits_without_freezing_source(self):
+    def test_image_builds_keep_old_sources_when_development_continues(self):
         self.prepare_fake_guix()
-        for text in ("first edit", "second edit"):
-            (self.project / "packaging/guix/packages/setup-install.scm").write_text(text)
-            result = self.make("build", "image")
-            self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertFalse(self.inputs.exists())
+        recipe = "packaging/guix/packages/setup-install.scm"
+        (self.project / recipe).write_text("first edit")
+        result = self.make("build", "image")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        (self.project / recipe).write_text("second edit")
+        before = self.calls()
+        result = self.make("build", "image")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Build inputs changed", result.stdout)
+        self.assertEqual(self.calls(), before)
+        result = self.make("build", "image", "build_dir=build/image-02")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual((self.inputs / recipe).read_text(), "first edit")
+        self.assertEqual((self.project / "build/image-02/source-record" / recipe).read_text(),
+                         "second edit")
         builds = [c for c in self.calls()
                   if "--file=packaging/guix/packages/setup-install.scm" in c["args"]]
         self.assertEqual(len(builds), 2)  # Each invocation reaches Guix's cache.
@@ -251,7 +261,7 @@ for argument in args:
         self.prepare_fake_guix()
         original = (self.project / "README.md").read_bytes()
         self.environment["EDIT_LIVE_PROJECT"] = str(self.project)
-        result = self.make("build", "candidate")
+        result = self.make("build", "image")
         self.assertEqual(result.returncode, 0, result.stdout)
         for call in self.calls():
             self.assertEqual(Path(call["cwd"]).resolve(), self.inputs.resolve())
@@ -259,20 +269,20 @@ for argument in args:
         self.assertEqual((catalogue / "source-record/README.md").read_bytes(), original)
         self.assertEqual((self.project / "README.md").read_text(), "later edit")
         before = (catalogue / "SHA256SUMS").read_bytes()
-        result = self.make("build", "candidate")
+        result = self.make("build", "image")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Build inputs changed", result.stdout)
         self.assertEqual((catalogue / "SHA256SUMS").read_bytes(), before)
 
-    def test_failed_candidate_can_be_retried(self):
+    def test_failed_image_build_can_be_retried(self):
         self.prepare_fake_guix()
         self.environment["FAIL_BUILD"] = "yes"
-        failed = self.make("build", "candidate")
+        failed = self.make("build", "image")
         self.assertNotEqual(failed.returncode, 0)
         self.assertFalse((self.project / "build/catalogue").exists())
         self.environment.pop("FAIL_BUILD")
         for _ in range(2):
-            retried = self.make("build", "candidate")
+            retried = self.make("build", "image")
             self.assertEqual(retried.returncode, 0, retried.stdout)
 
     def test_payload_commands_scan_only_named_modules(self):
@@ -284,7 +294,10 @@ for argument in args:
                   if "--file=packaging/guix/packages/setup-install.scm" in c["args"]]
         for arguments in builds:
             paths = [arguments[i + 1] for i, arg in enumerate(arguments) if arg == "-L"]
-            self.assertEqual(paths, [str(self.project.resolve() / "build/installer-source"), "src"])
+            self.assertEqual(len(paths), 2)
+            self.assertEqual(paths[1], "src")
+            self.assertTrue(Path(paths[0]).is_absolute())
+            self.assertIn(Path(paths[0]).name, ("source", "installer-source"))
         for path in (self.project / "src").rglob("*.scm"):
             source = "\n".join(line for line in path.read_text().splitlines()
                                if not line.lstrip().startswith(";"))
@@ -296,6 +309,10 @@ for argument in args:
     def test_grammar_rejects_incomplete_or_ambiguous_commands_before_work(self):
         self.prepare_fake_guix()
         for goals in (("build",), ("image", "build"), ("build", "code"),
+                      ("build", "candidate"), ("build", "release"),
+                      ("check", "release"), ("package", "installer"),
+                      ("build", "installer", "candidate=old-catalogue"),
+                      ("build", "package", "release_dir=old-output"),
                       ("build", "image", "check", "image"),
                       ("build", "image", "only=hardware"),
                       ("check", "code", "only=unknown")):
@@ -306,13 +323,13 @@ for argument in args:
 
     def test_resource_limits_are_optional_and_paths_may_contain_spaces(self):
         self.prepare_fake_guix()
-        result = self.make("build", "candidate", "build_dir=build with spaces")
+        result = self.make("build", "image", "build_dir=build with spaces")
         self.assertEqual(result.returncode, 0, result.stdout)
         for call in self.calls():
             self.assertFalse(any(arg.startswith(("--max-jobs", "--cores"))
                                  for arg in call["args"]))
         self.assertTrue((self.project / "build with spaces/catalogue").is_dir())
-        result = self.make("build", "image", "jobs=3", "cores=4")
+        result = self.make("build", "image", "build_dir=build with spaces", "jobs=3", "cores=4")
         self.assertEqual(result.returncode, 0, result.stdout)
         for call in self.calls()[-5:]:
             if "repl" not in call["args"]:
@@ -321,17 +338,42 @@ for argument in args:
         profile_calls = [c for c in self.calls() if "time-machine" in c["args"]]
         self.assertEqual(len(profile_calls), 2)
 
-    def test_plan_does_not_replace_the_existing_image(self):
+    def test_plan_needs_no_guix_and_creates_no_build_directory(self):
+        self.prepare_fake_guix()
+        self.environment["GUIX"] = str(self.root / "guix-not-installed")
+        before = sorted(self.project.rglob("*"))
+        result = self.make("plan", "image", "build_dir=build/fresh image",
+                           "catalogue=build/chosen catalogue", "jobs=3", "cores=4")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("build/fresh image/source-record", result.stdout)
+        self.assertIn("build/chosen catalogue", result.stdout)
+        self.assertIn("Jobs: 3\nCores: 4", result.stdout)
+        self.assertIn("Exact dependencies and downloads are determined during the build", result.stdout)
+        self.assertFalse((self.root / "calls").exists())
+        self.assertFalse((self.project / "build").exists())
+        self.assertEqual(sorted(self.project.rglob("*")), before)
+
+    def test_plan_preserves_existing_outputs_and_reports_changed_source(self):
         self.prepare_fake_guix()
         result = self.make("build", "image")
         self.assertEqual(result.returncode, 0, result.stdout)
         previous = (self.project / "build/payload").lstat().st_mtime_ns
+        source_root = (self.project / "build/installer-source").lstat().st_mtime_ns
+        catalogue = (self.project / "build/catalogue/SHA256SUMS").read_bytes()
+        before = self.calls()
         result = self.make("plan", "image")
         self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Build inputs verified", result.stdout)
+        self.assertEqual(self.calls(), before)
+        (self.project / "README.md").write_text("a change to plan")
+        result = self.make("plan", "image")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Build inputs changed", result.stdout)
+        self.assertEqual(self.calls(), before)
         self.assertEqual((self.project / "build/payload").lstat().st_mtime_ns, previous)
-        image_call = self.calls()[-1]["args"]
-        self.assertIn("--dry-run", image_call)
-        self.assertFalse(any(arg.startswith("--root=") for arg in image_call))
+        self.assertEqual((self.project / "build/installer-source").lstat().st_mtime_ns, source_root)
+        self.assertEqual((self.project / "build/catalogue/SHA256SUMS").read_bytes(), catalogue)
+        self.assertEqual(list((self.project / "build").glob(".build-*")), [])
 
     def test_image_operation_can_run_without_make(self):
         self.prepare_fake_guix()
@@ -349,18 +391,25 @@ for argument in args:
         self.environment["PYTHON"] = sys.executable
         result = self.make("check", "image")
         self.assertEqual(result.returncode, 0, result.stdout)
-        (self.root / "fixture-package" / fixtures.PACKAGE_DIRECTORY / "guix-setup.zip").unlink()
+        (self.project / "build/catalogue/os/guix-setup.zip").unlink()
         result = self.make("check", "image")
         self.assertNotEqual(result.returncode, 0)
 
-    def test_python_check_accepts_an_optional_archive(self):
+    def test_python_checks_manage_temporary_source_and_accept_an_archive(self):
         python = self.root / "python"
-        python.write_text("#!" + sys.executable + "\n" + '''import json, pathlib, sys
+        python.write_text("#!" + sys.executable + "\n" + '''import json, os, pathlib, sys
 args = sys.argv[1:]
+source = os.environ.get("ASAHI_SOURCE")
 with pathlib.Path(__file__).with_suffix(".log").open("a") as stream:
-    stream.write(json.dumps(args) + "\\n")
+    stream.write(json.dumps({"args": args, "source": source}) + "\\n")
 if args[0] == "scripts/prepare_asahi.py":
     pathlib.Path(args[args.index("--directory") + 1]).mkdir(parents=True, exist_ok=True)
+    stage = "prepare"
+else:
+    assert pathlib.Path(source).is_absolute() and pathlib.Path(source).is_dir()
+    stage = "test"
+if os.environ.get("HELLO_GUIX_TEST_FAILURE") == stage:
+    sys.exit(23)
 ''')
         python.chmod(0o755)
         environment = {"PATH": os.environ["PATH"], "PYTHON": str(python),
@@ -368,20 +417,37 @@ if args[0] == "scripts/prepare_asahi.py":
         shell = "/bin/bash" if Path("/bin/bash").is_file() else "bash"
         archive = str(self.root / "source archive.tar.gz")
         log = python.with_suffix(".log")
-        for arguments in ((), ("python", ""), ("python", archive)):
-            with self.subTest(arguments=arguments):
+        old_source = self.project / "build with spaces/asahi-installer/local-edit"
+        old_source.parent.mkdir(parents=True)
+        old_source.write_text("keep this edit")
+        cases = (((), ""), (("python", ""), ""), (("python", archive), ""),
+                 ((), "prepare"), ((), "test"))
+        for arguments, failure in cases:
+            with self.subTest(arguments=arguments, failure=failure):
                 log.unlink(missing_ok=True)
+                environment["HELLO_GUIX_TEST_FAILURE"] = failure
                 result = subprocess.run([shell, str(self.project / "scripts/check_code.sh"),
                                          *arguments], cwd=self.root, env=environment,
                                         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertEqual(result.returncode, 23 if failure else 0, result.stdout)
                 calls = [json.loads(line) for line in log.read_text().splitlines()]
+                source = Path(calls[0]["args"][2])
+                self.assertEqual(source.name, "asahi-installer")
+                self.assertEqual(source.parent.parent, Path("build with spaces"))
+                self.assertNotEqual(source, Path("build with spaces/asahi-installer"))
                 expected = ["scripts/prepare_asahi.py", "--directory",
-                            "build with spaces/asahi-installer"]
+                            str(source), "--cache-directory", "build with spaces/cache"]
                 if arguments and arguments[-1]:
                     expected += ["--archive", archive]
-                self.assertEqual(calls,
-                                 [expected, ["-m", "unittest", "discover", "-s", "tests", "-v"]])
+                expected_calls = [{"args": expected, "source": None}]
+                if failure != "prepare":
+                    expected_calls.append({
+                        "args": ["-m", "unittest", "discover", "-s", "tests", "-v"],
+                        "source": str((self.project / source).resolve()),
+                    })
+                self.assertEqual(calls, expected_calls)
+                self.assertFalse((self.project / source.parent).exists())
+                self.assertEqual(old_source.read_text(), "keep this edit")
 
 
 if __name__ == "__main__":

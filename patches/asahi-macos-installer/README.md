@@ -29,4 +29,4 @@ installer, so they can be contributed upstream together.
 
 [patch]: patches/0001-initialize-guix-boot-choice.patch
 [helper]: overlay/guix_boot.py
-[development]: ../../docs/development.md#local-work-on-macos-or-linux
+[development]: ../../docs/development.md#prepare-your-tools

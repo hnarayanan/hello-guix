@@ -91,6 +91,23 @@ class SourceTests(unittest.TestCase):
         self.assertTrue((destination / "src/main.py").is_file())
         self.assertFalse((self.root / "build").exists())
 
+    def test_temporary_sources_share_cache_and_use_current_adaptations(self):
+        cache = self.root / "download cache"
+        for attempt in range(2):
+            addition = f"addition = {attempt}\n"
+            (self.adaptations / "overlay/addition.py").write_text(addition)
+            with tempfile.TemporaryDirectory(dir=self.root) as temporary, \
+                 contextlib.redirect_stdout(io.StringIO()), \
+                 patch.object(prepare.urllib.request, "urlopen",
+                              side_effect=AssertionError("must reuse the archive")):
+                destination = Path(temporary) / "asahi-installer"
+                prepare.prepare(self.archive if attempt == 0 else None,
+                                destination, cache)
+                self.assertEqual((destination / "src/addition.py").read_text(), addition)
+            self.assertFalse(destination.exists())
+            cached, = cache.iterdir()
+            self.assertEqual(cached.read_bytes(), self.archive.read_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()

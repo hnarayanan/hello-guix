@@ -20,9 +20,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 case "${1:-python}" in
     python)
         build_dir=${BUILD_DIR:-build}
-        "$PYTHON" scripts/prepare_asahi.py --directory "$build_dir/asahi-installer" \
-            ${2:+--archive "$2"}
-        export ASAHI_SOURCE=$(cd "$build_dir/asahi-installer" && pwd -P)
+        mkdir -p "$build_dir"
+        temporary=$(mktemp -d "$build_dir/.check-XXXXXX")
+        trap 'rm -rf "$temporary"' EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        "$PYTHON" scripts/prepare_asahi.py --directory "$temporary/asahi-installer" \
+            --cache-directory "$build_dir/cache" ${2:+--archive "$2"}
+        export ASAHI_SOURCE=$(cd "$temporary/asahi-installer" && pwd -P)
         "$PYTHON" -m unittest discover -s tests -v ;;
     hardware|source|configuration)
         bash "tests/guix/check-$1.sh" ;;

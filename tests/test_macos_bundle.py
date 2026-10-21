@@ -21,8 +21,8 @@ PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT / "scripts"))
 from asahi_payload import stage
 from build_inputs import checksum_text, file_hashes, record_snapshot, sha256, source_files
-from macos_bundle import (assemble, build_libffi, check_assembly, check_bundle, check_catalogue,
-                          inventory, main, release, unpack_runtime, verify_checksums)
+from macos_bundle import (assemble, build_libffi, build_package, check_assembly, check_bundle,
+                          check_catalogue, inventory, main, unpack_runtime, verify_checksums)
 import payload_fixtures as fixtures
 
 
@@ -130,18 +130,33 @@ class MacOSBundleTests(unittest.TestCase):
         return subprocess.run([sys.executable, "-B", str(PROJECT / "scripts/macos_bundle.py"),
                                *map(str, arguments)], capture_output=True, text=True)
 
+    def test_cli_checks_image_and_saved_source_without_working_source(self):
+        (self.project / "README.md").write_text("new working source")
+        result = self.run_cli("check-image", "--catalogue", self.catalogue)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Image and source verified", result.stdout)
+        for name in ("os/guix-setup.zip", "source-record/README.md"):
+            with self.subTest(file=name):
+                path = self.catalogue / name
+                original = path.read_bytes()
+                path.write_bytes(b"changed after image build")
+                result = self.run_cli("check-image", "--catalogue", self.catalogue)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Checksum inventory differs", result.stderr)
+                path.write_bytes(original)
+
     def test_cli_checks_installer_and_matching_sources(self):
         self.build()
-        result = self.run_cli("check", "--assembly", self.assembly)
+        result = self.run_cli("check-installer", "--assembly", self.assembly)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Installer and source verified", result.stdout)
         (self.source / "README.md").write_text("changed after assembly")
-        result = self.run_cli("check", "--assembly", self.assembly)
+        result = self.run_cli("check-installer", "--assembly", self.assembly)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Checksum inventory differs", result.stderr)
-        result = self.run_cli("check", "--bundle", self.output)
+        result = self.run_cli("check-installer", "--bundle", self.output)
         self.assertEqual(result.returncode, 0, result.stderr)
-        result = self.run_cli("check", "--bundle", self.output, "--assembly", self.assembly)
+        result = self.run_cli("check-installer", "--bundle", self.output, "--assembly", self.assembly)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not allowed with argument", result.stderr)
 
@@ -154,15 +169,15 @@ class MacOSBundleTests(unittest.TestCase):
         # Exercise a custom output inside the project, outside its default build directory.
         self.assembly = self.project / "local outputs/assembly"
         self.build()
-        release_dir = self.root / "release"
-        release(self.assembly, release_dir, "0.1", "https://example.org/0.1")
+        package_dir = self.root / "downloads"
+        build_package(self.assembly, package_dir, "0.1", "https://example.org/0.1")
         extracted = self.root / "extracted"
-        with tarfile.open(release_dir / "hello-guix-0.1-src.tar.gz") as archive:
+        with tarfile.open(package_dir / "hello-guix-0.1-src.tar.gz") as archive:
             archive.extractall(extracted, filter="data")
         source = extracted / "hello-guix-0.1-src"
         self.assertEqual(file_hashes(source / "image-source"), file_hashes(self.inputs))
         self.assertFalse((source / "upstream").exists())
-        self.assertTrue((source / "build.json").is_file())
+        self.assertFalse((source / "build.json").exists())
         self.assertFalse((source / ".git").exists())
         snapshot = source / "build/source-record"
         record_snapshot(snapshot, source)
@@ -183,6 +198,9 @@ class MacOSBundleTests(unittest.TestCase):
     def test_installer_is_independent_of_development_sources(self):
         report = self.build()
         self.assertEqual(check_assembly(self.assembly), report)
+        self.assertEqual(set(p.name for p in self.assembly.iterdir()),
+                         {"installer", "source", "build.json"})
+        self.assertFalse((self.source / "build.json").exists())
         self.assertEqual(set(p.name for p in self.output.iterdir()), {
             "install.sh", "bundle.json", "libexec", "runtime", "catalogue",
             "docs", "COPYING", "LICENSES", "NOTICE", "notices",
@@ -211,6 +229,7 @@ class MacOSBundleTests(unittest.TestCase):
         image_record = (self.catalogue / "source-record/README.md").read_bytes()
         report = self.build()
         self.assertEqual(check_bundle(self.output), report)
+        self.assertEqual(check_assembly(self.assembly), report)
         self.assertEqual((self.source / "image-source/README.md").read_bytes(), image_record)
         self.assertEqual((self.source / "README.md").read_text(), "new documentation\n")
         self.assertEqual((self.output / "docs/channels.scm").read_bytes(),
@@ -394,16 +413,16 @@ class MacOSBundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "install.sh"):
             check_bundle(self.output)
 
-    def test_release_preserves_bundle_and_pins_its_download(self):
+    def test_package_preserves_bundle_and_pins_its_download(self):
         report = self.build()
-        destination = self.root / "release"
-        release(self.assembly, destination, "0.1-rc2", "https://releases.example/0.1-rc2")
+        destination = self.root / "downloads"
+        build_package(self.assembly, destination, "0.1-rc2", "https://releases.example/0.1-rc2")
         verify_checksums(destination)
-        result = self.run_cli("check-release", "--directory", destination)
+        result = self.run_cli("check-package", "--directory", destination)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Release checksum inventory verified", result.stdout)
+        self.assertIn("Package checksum inventory verified", result.stdout)
         (destination / "extra").write_text("unlisted")
-        result = self.run_cli("check-release", "--directory", destination)
+        result = self.run_cli("check-package", "--directory", destination)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Checksum inventory differs", result.stderr)
         (destination / "extra").unlink()
@@ -424,9 +443,10 @@ class MacOSBundleTests(unittest.TestCase):
         verify_checksums(self.root / "source/hello-guix-0.1-rc2-src")
         extracted = self.root / "source/hello-guix-0.1-rc2-src"
         expected = {name.as_posix() for name in source_files(self.project)}
-        self.assertEqual(set(file_hashes(extracted)), expected | {"SHA256SUMS", "build.json"})
+        self.assertEqual(set(file_hashes(extracted)), expected | {"SHA256SUMS"})
         self.assertEqual(file_hashes(extracted), file_hashes(self.source))
-        build = json.loads((extracted / "build.json").read_text())
+        self.assertEqual(sha256(extracted / "SHA256SUMS"), sha256(self.inputs / "SHA256SUMS"))
+        build = json.loads((self.assembly / "build.json").read_text())
         self.assertEqual(build["payload"], report["payload"])
         self.assertEqual(build["installer_sha256"], sha256(self.output / "bundle.json"))
         self.assertEqual(build["image_source"], ".")
@@ -437,11 +457,20 @@ class MacOSBundleTests(unittest.TestCase):
             "install.sh", "SHA256SUMS",
         })
 
-    def test_make_builds_and_checks_release_from_existing_assembly(self):
+    def test_make_builds_and_checks_package_from_existing_assembly(self):
+        # The fixture runtime cannot run; exercise Make with a controlled launcher.
+        launcher = self.project / "src/hello-guix/installer/macos/launch.sh"
+        launcher.write_text('#!/bin/sh\nset -eu\n'
+                            'test "$#" -eq 1\n'
+                            'test "$1" = check\n'
+                            'printf "%s\\n" "$1" >> "$HOME/runtime-check"\n'
+                            'exit "${RUNTIME_CHECK_STATUS:-0}"\n')
         self.build()
-        destination = self.root / "release files"
+        destination = self.root / "package files"
+        bash_directory = str(Path(shutil.which("bash")).parent)
         environment = {
-            "PATH": os.defpath, "HOME": str(self.root), "TMPDIR": str(self.root),
+            "PATH": bash_directory + os.pathsep + os.defpath,
+            "HOME": str(self.root), "TMPDIR": str(self.root),
             "PYTHON": sys.executable, "PYTHONDONTWRITEBYTECODE": "1",
         }
 
@@ -451,20 +480,36 @@ class MacOSBundleTests(unittest.TestCase):
                                   cwd=PROJECT, env=environment, capture_output=True, text=True)
 
         # Everything needed is local; the URL is written into the launcher only.
-        result = make("build", "release", assembly=self.assembly, release_dir=destination,
+        result = make("build", "package", assembly=self.assembly, package_dir=destination,
                       version="0.1", base_url="https://invalid.example")
         self.assertEqual(result.returncode, 0, result.stderr)
-        for noun, settings in (("installer", {"assembly": self.assembly}),
-                               ("release", {"release_dir": destination})):
+        for noun, settings in (("image", {"catalogue": self.catalogue}),
+                               ("installer", {"assembly": self.assembly}),
+                               ("package", {"package_dir": destination})):
             with self.subTest(noun=noun):
                 result = make("check", noun, **settings)
                 self.assertEqual(result.returncode, 0, result.stderr)
-        (destination / "install.sh").write_text("changed after release assembly")
-        result = make("check", "release", release_dir=destination)
+        runtime_check = self.root / "runtime-check"
+        self.assertEqual(runtime_check.read_text(), "check\n")
+
+        environment["RUNTIME_CHECK_STATUS"] = "7"
+        result = make("check", "installer", assembly=self.assembly)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Installer and source verified", result.stdout)
+        self.assertEqual(runtime_check.read_text(), "check\ncheck\n")
+        environment.pop("RUNTIME_CHECK_STATUS")
+
+        (self.source / "README.md").write_text("changed after assembly")
+        result = make("check", "installer", assembly=self.assembly)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Checksum inventory differs", result.stderr)
+        self.assertEqual(runtime_check.read_text(), "check\ncheck\n")
+        (destination / "install.sh").write_text("changed after packaging")
+        result = make("check", "package", package_dir=destination)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Checksum inventory differs", result.stderr)
 
-    def test_release_rejects_old_source_layout_even_with_valid_checksums(self):
+    def test_package_rejects_old_source_layout_even_with_valid_checksums(self):
         self.build()
         upstream = self.source / "upstream"
         upstream.mkdir()
@@ -473,45 +518,89 @@ class MacOSBundleTests(unittest.TestCase):
         del hashes["SHA256SUMS"]
         (self.source / "SHA256SUMS").write_text(checksum_text(hashes))
         verify_checksums(self.source)
-        destination = self.root / "release"
+        destination = self.root / "downloads"
         with self.assertRaisesRegex(ValueError, "Unclassified project path: upstream"):
-            release(self.assembly, destination, "0.1", "https://releases.example")
+            build_package(self.assembly, destination, "0.1", "https://releases.example")
         self.assertFalse(destination.exists())
 
-    def test_release_rejects_changed_or_unpaired_project_sources(self):
+    def test_assembly_rejects_replaced_source_with_renewed_checksums(self):
         self.build()
-        destination = self.root / "release"
+        (self.source / "README.md").write_text("different project source")
+        hashes = file_hashes(self.source)
+        del hashes["SHA256SUMS"]
+        (self.source / "SHA256SUMS").write_text(checksum_text(hashes))
+        verify_checksums(self.source)
+        with self.assertRaisesRegex(ValueError, "Project source does not match"):
+            check_assembly(self.assembly)
+
+    def test_assembly_rejects_replaced_image_source_with_renewed_checksums(self):
+        (self.project / "README.md").write_text("new launcher documentation")
+        self.build()
+        image_source = self.source / "image-source"
+        (image_source / "README.md").write_text("different image source")
+        for directory in (image_source, self.source):
+            hashes = file_hashes(directory)
+            del hashes["SHA256SUMS"]
+            (directory / "SHA256SUMS").write_text(checksum_text(hashes))
+            verify_checksums(directory)
+        with self.assertRaisesRegex(ValueError, "Image source does not match"):
+            check_assembly(self.assembly)
+
+    def test_assembly_requires_its_record_beside_the_source(self):
+        self.build()
+        record = self.assembly / "build.json"
+        original = record.read_bytes()
+        build = json.loads(original)
+        for location in ("../elsewhere", "image-source"):
+            build["image_source"] = location
+            record.write_text(json.dumps(build))
+            with self.subTest(location=location), self.assertRaisesRegex(
+                    ValueError, "Image source location does not match"):
+                check_assembly(self.assembly)
+        record.unlink()
+        with self.assertRaises(FileNotFoundError):
+            check_assembly(self.assembly)
+        (self.source / "build.json").write_bytes(original)
+        hashes = file_hashes(self.source)
+        del hashes["SHA256SUMS"]
+        (self.source / "SHA256SUMS").write_text(checksum_text(hashes))
+        with self.assertRaisesRegex(ValueError, "Unclassified project path: build.json"):
+            check_assembly(self.assembly)
+
+    def test_package_rejects_changed_or_unpaired_project_sources(self):
+        self.build()
+        destination = self.root / "downloads"
         readme = self.source / "README.md"
         original = readme.read_bytes()
         readme.write_text("changed after assembly")
         with self.assertRaisesRegex(ValueError, "inventory differs"):
-            release(self.assembly, destination, "0.1", "https://releases.example")
+            build_package(self.assembly, destination, "0.1", "https://releases.example")
         readme.write_bytes(original)
         report = json.loads((self.output / "bundle.json").read_text())
         report["minimum_macos"] = 27
         (self.output / "bundle.json").write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError, "Installer and source do not match"):
-            release(self.assembly, destination, "0.1", "https://releases.example")
+            build_package(self.assembly, destination, "0.1", "https://releases.example")
         self.assertFalse(destination.exists())
 
-    def test_release_refuses_a_different_version(self):
+    def test_package_refuses_a_different_version(self):
         self.build()
-        destination = self.root / "release"
+        destination = self.root / "downloads"
         for version in ("0.2", "0.10", "0.1-anything", "0.1-rc0"):
             with self.subTest(version=version), self.assertRaisesRegex(ValueError, "catalogue version"):
-                release(self.assembly, destination, version, "https://releases.example")
+                build_package(self.assembly, destination, version, "https://releases.example")
             self.assertFalse(destination.exists())
 
-    def test_release_refuses_changed_bundle_or_insecure_host(self):
+    def test_package_refuses_changed_bundle_or_insecure_host(self):
         self.build()
-        destination = self.root / "release"
+        destination = self.root / "downloads"
         for url in ("http://releases.example", "file:///tmp", "https://user:password@releases.example"):
             with self.subTest(url=url), self.assertRaisesRegex(ValueError, "HTTPS"):
-                release(self.assembly, destination, "0.1", url)
+                build_package(self.assembly, destination, "0.1", url)
             self.assertFalse(destination.exists())
         (self.output / "runtime/main.py").write_text("changed")
         with self.assertRaisesRegex(ValueError, "runtime/main.py"):
-            release(self.assembly, destination, "0.1", "https://releases.example")
+            build_package(self.assembly, destination, "0.1", "https://releases.example")
         self.assertFalse(destination.exists())
 
     def test_bootstrap_reuses_verified_download_and_rejects_corruption(self):
@@ -528,7 +617,11 @@ class MacOSBundleTests(unittest.TestCase):
             "arch": "exit 0",
             "sw_vers": 'echo "${TEST_MACOS_VERSION:-26.0}"',
             "df": 'printf "Filesystem 1024-blocks Used Available Capacity Mounted\\nfixture 9000000 0 %s 0%% /\\n" "${TEST_FREE_KIB:-9000000}"',
-            "caffeinate": 'shift; exec "$@"',
+            # The Mac launcher uses /bin/bash; Guix keeps Bash elsewhere.
+            "caffeinate": 'shift\n'
+                          '[ "$1" = /bin/bash ]\n'
+                          'shift\n'
+                          f'exec {shlex.quote(shutil.which("bash"))} "$@"',
             "curl": 'echo download >> "$HOME/downloads"\n'
                     'while [ "$1" != --output ]; do shift; done\n'
                     'cp "$HOME/download.tar.gz" "$2"',
@@ -664,7 +757,7 @@ class LibffiBuildTests(unittest.TestCase):
 
     def test_invalid_core_counts_stop_before_assembly(self):
         for cores in ("0", "-1", "two"):
-            arguments = ["macos_bundle.py", "build", "--catalogue", "unused",
+            arguments = ["macos_bundle.py", "build-installer", "--catalogue", "unused",
                          "--output", "unused", "--cores", cores]
             with self.subTest(cores=cores), patch("sys.argv", arguments), \
                     patch("macos_bundle.assemble") as build, \

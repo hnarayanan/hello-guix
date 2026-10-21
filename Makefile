@@ -7,11 +7,12 @@
 GUIX ?= guix
 PYTHON ?= python3
 build_dir ?= build
-candidate ?= $(build_dir)/catalogue
+catalogue ?= $(build_dir)/catalogue
 assembly ?= $(build_dir)/assembly
-release_dir ?= $(build_dir)/release
+package_dir ?= $(build_dir)/package
 jobs ?=
 cores ?=
+vm_memory ?=
 only ?= python
 runtime_archive ?=
 source_archive ?=
@@ -19,14 +20,22 @@ runtime_sources ?=
 version ?=
 base_url ?=
 
+ifneq ($(origin candidate),undefined)
+$(error Use catalogue= instead of candidate=)
+endif
+ifneq ($(origin release_dir),undefined)
+$(error Use package_dir= instead of release_dir=)
+endif
+
 export GUIX PYTHON
 export PYTHONDONTWRITEBYTECODE = 1
 export BUILD_DIR = $(build_dir)
 export MAX_JOBS = $(jobs)
 export CORES = $(cores)
+export VM_MEMORY = $(vm_memory)
 
-operations := plan-image build-image build-candidate build-installer build-release \
-              check-code check-image check-installer check-release
+operations := plan-image build-image build-installer build-package \
+              check-code check-image check-installer check-package
 
 # Validate the whole request before Make starts any operation.
 ifneq ($(strip $(MAKECMDGOALS)),)
@@ -56,51 +65,49 @@ help:
 	@printf '%s\n' \
 	  'Hello Guix: make <verb> <noun> [setting=value]' \
 	  '' \
-	  'make plan image       Prepare Guix and show the image build/download plan.' \
-	  'make build image      Build and check the installation image.' \
-	  'make build candidate  Freeze source and build its image and catalogue.' \
+	  'make plan image       Preview image build steps and paths without building or downloading.' \
+	  'make build image      Save source, build and check the image and its catalogue.' \
 	  'make build installer  Assemble the Mac installer and its source tree.' \
-	  'make build release    Create the two downloads, launcher and checksums.' \
-	  'make check code       Prepare Asahi source and run the local Python tests.' \
-	  'make check image      Check the existing installation image.' \
-	  'make check installer  Verify the assembled installer and its source tree.' \
-	  'make check release    Verify the release files against their checksums.' \
+	  'make build package    Create the two downloads, launcher and checksums.' \
+	  'make check code       Run the local Python tests.' \
+	  'make check image      Verify the image, catalogue and saved source.' \
+	  'make check installer  Verify the assembly and test its bundled runtime on macOS.' \
+	  'make check package    Verify the download files against their checksums.' \
 	  '' \
 	  'check code: only=python|hardware|source|desktop|configuration|installation-target|installation' \
-	  'Locations: build_dir, candidate, assembly, release_dir.' \
+	  'Locations: build_dir, catalogue, assembly, package_dir.' \
 	  'Resources: optional jobs and cores; otherwise use the build tools defaults.' \
+	  'VM: optional vm_memory in MiB for the full installation check.' \
 	  'Installer inputs: runtime_archive, source_archive, runtime_sources (optional).' \
-	  'Release inputs: version, base_url (HTTPS).' \
+	  'Package inputs: version, base_url (HTTPS).' \
 	  'Tools: GUIX, PYTHON. See docs/development.md for the complete flow.'
 
 _plan-image:
-	bash scripts/build_image.sh --dry-run
+	bash scripts/build_image.sh --dry-run "$(catalogue)"
 
 _build-image:
-	bash scripts/build_image.sh
-
-_build-candidate:
-	bash scripts/build_candidate.sh "$(candidate)"
+	bash scripts/build_image.sh "$(catalogue)"
 
 _build-installer:
-	"$(PYTHON)" scripts/macos_bundle.py build --catalogue "$(candidate)" --output "$(assembly)" \
+	"$(PYTHON)" scripts/macos_bundle.py build-installer --catalogue "$(catalogue)" --output "$(assembly)" \
 	  $(if $(runtime_archive),--runtime-archive "$(runtime_archive)") \
 	  $(if $(source_archive),--source-archive "$(source_archive)") \
 	  $(if $(runtime_sources),--runtime-sources "$(runtime_sources)") \
 	  $(if $(cores),--cores "$(cores)")
 
-_build-release:
-	"$(PYTHON)" scripts/macos_bundle.py release --assembly "$(assembly)" \
-	  --output "$(release_dir)" --version "$(version)" --base-url "$(base_url)"
+_build-package:
+	"$(PYTHON)" scripts/macos_bundle.py build-package --assembly "$(assembly)" \
+	  --output "$(package_dir)" --version "$(version)" --base-url "$(base_url)"
 
 _check-code:
 	bash scripts/check_code.sh "$(only)" "$(source_archive)"
 
 _check-image:
-	"$(PYTHON)" scripts/asahi_payload.py check --package "$(BUILD_DIR)/payload"
+	"$(PYTHON)" scripts/macos_bundle.py check-image --catalogue "$(catalogue)"
 
 _check-installer:
-	"$(PYTHON)" scripts/macos_bundle.py check --assembly "$(assembly)"
+	"$(PYTHON)" scripts/macos_bundle.py check-installer --assembly "$(assembly)"
+	bash "$(assembly)/installer/install.sh" check
 
-_check-release:
-	"$(PYTHON)" scripts/macos_bundle.py check-release --directory "$(release_dir)"
+_check-package:
+	"$(PYTHON)" scripts/macos_bundle.py check-package --directory "$(package_dir)"

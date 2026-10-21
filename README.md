@@ -28,19 +28,19 @@ for requirements, tested hardware and the full walkthrough.
 On the Mac where you want to install Guix, choose how you’d like to begin:
 
 **1. Download, review and run.** Save the
-[installer script](https://harishnarayanan.org/projects/hello-guix/install.sh)
-as `install.sh` in your Downloads folder. Read it in your text editor, then
-open Terminal and run:
+[installer script](https://harishnarayanan.org/hello-guix.sh)
+as `hello-guix.sh` in your Downloads folder. Read it in your text editor,
+then open Terminal and run:
 
 ```sh
-sh "$HOME/Downloads/install.sh"
+sh "$HOME/Downloads/hello-guix.sh"
 ```
 
 **2. Download and run directly.** Open Terminal and run:
 
 ```sh
 curl -fsSL --proto '=https' \
-  https://harishnarayanan.org/projects/hello-guix/install.sh | sh
+  https://harishnarayanan.org/hello-guix.sh | sh
 ```
 
 Both routes download and check the same installer, then guide you through

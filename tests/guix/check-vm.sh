@@ -19,18 +19,21 @@ if test "$fixture" = installation; then
         --root="$records/fixture" --file=tests/guix/installation-vm.scm
     "$records/fixture/python" tests/run-installation-vm.py "$records/fixture" \
         --qemu "$records/fixture/qemu" --fdtput "$records/fixture/fdtput" \
-        --firmware "$records/fixture/firmware" --output="$records"
+        --firmware "$records/fixture/firmware" --output="$records" \
+        ${VM_MEMORY:+--memory "$VM_MEMORY"}
     exit
 fi
 pinned_guix build -L src ${build_options[@]+"${build_options[@]}"} \
     --root="$records/tools" --file="tests/guix/$fixture.scm"
 truncate -s "$size" "$records/disk.img"
+# The guest needs no terminal input, which can suspend QEMU under timeout.
 "$records/tools/timeout" "$seconds" "$records/tools/qemu" \
     -machine virt -cpu max -accel tcg -m 3072 -smp 2 -nographic -no-reboot \
     -kernel "$records/tools/kernel" -initrd "$records/tools/initrd" \
     -append "$arguments" \
     -drive "if=none,id=test,format=raw,file=$records/disk.img" \
-    -device virtio-blk-pci,drive=test -nic none > "$records/console.log" 2>&1
+    -device virtio-blk-pci,drive=test -nic none \
+    < /dev/null > "$records/console.log" 2>&1
 grep -F "$marker-PASS" "$records/console.log"
 ! grep -F "$marker-FAIL" "$records/console.log"
 ) 2>&1 | tee "$records/check.log"

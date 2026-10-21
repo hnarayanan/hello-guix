@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Harish Narayanan
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Save source for a release candidate or a recorded test run.
+"""Save source for an image build or a recorded test run.
 
 The snapshot contains whole source directories, root files and SHA256SUMS.
 Build outputs, caches and Git metadata stay out.
@@ -21,8 +21,8 @@ SOURCE_FILES = (".gitignore", "COPYING", "Makefile", "NOTICE", "README.md")
 SOURCE_DIRECTORIES = ("LICENSES", "docs", "packaging", "patches", "scripts", "src", "tests")
 EXCLUDED_ENTRIES = (
     ".git", "build",
-    # Generated records and the original image source in released source trees.
-    "SHA256SUMS", "build.json", "image-source",
+    # The checksum inventory and original image source in released source trees.
+    "SHA256SUMS", "image-source",
 )
 CACHE_NAMES = (".DS_Store", "__pycache__")
 
@@ -105,7 +105,7 @@ def verify_snapshot(directory, project=PROJECT, *, outputs=()):
                      if expected.get(name) != actual.get(name))
     if changed:
         raise ValueError("Build inputs changed: " + ", ".join(changed)
-                         + ". Keep this source record and choose a new candidate directory.")
+                         + ". Keep this source record and choose a new build directory.")
     return actual
 
 

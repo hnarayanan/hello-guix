@@ -80,6 +80,7 @@ def main():
         "compression": "LZFSE round trip passed",
         "installer_started": False,
     }, indent=2))
+    print("Bundled runtime verified")
 
 
 if __name__ == "__main__":

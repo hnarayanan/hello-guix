@@ -29,7 +29,7 @@ if true; then
     case "$*" in
         '') ;;
         --check) action=check ;;
-        *) echo 'Usage: sh install.sh [--check]' >&2; exit 1 ;;
+        *) echo 'Usage: sh SCRIPT [--check]' >&2; exit 1 ;;
     esac
     if [ "$action" = install ]; then
         # curl | sh supplies the script on stdin. Give the installer the

@@ -45,19 +45,19 @@ substantially more.
 
 On the Mac where you want to install Guix, choose how you’d like to begin.
 You can save the
-[installer script](https://harishnarayanan.org/projects/hello-guix/install.sh)
-as `install.sh` in your Downloads folder, read it in your text editor, then
-open Terminal and run:
+[installer script](https://harishnarayanan.org/hello-guix.sh)
+as `hello-guix.sh` in your Downloads folder, read it in your text editor,
+then open Terminal and run:
 
 ```sh
-sh "$HOME/Downloads/install.sh"
+sh "$HOME/Downloads/hello-guix.sh"
 ```
 
 Or download and run it directly from Terminal:
 
 ```sh
 curl -fsSL --proto '=https' \
-  https://harishnarayanan.org/projects/hello-guix/install.sh | sh
+  https://harishnarayanan.org/hello-guix.sh | sh
 ```
 
 Both routes download the same installer and check its SHA-256 checksum and

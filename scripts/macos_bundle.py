@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Harish Narayanan
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Assemble or verify a macOS bundle. Never run an installer."""
+"""Build and check macOS installers and download packages. Never run an installer."""
 
 import argparse
 import gzip
+import hashlib
 import json
 import platform
 from pathlib import Path, PurePosixPath
@@ -163,6 +164,7 @@ def prepare_runtime_inputs(source_record, bundle, destination, cache=None):
 
 
 def check_catalogue(catalogue):
+    """Verify the image, catalogue and saved source as one build output."""
     verify_checksums(catalogue)
     verify_checksums(catalogue / "source-record")
     entry, _, report = check_os(catalogue / "installer_data.json", catalogue / "os")
@@ -194,7 +196,7 @@ def copy_guides(source, bundle, image_source):
 def assemble(catalogue, output, runtime_archive=None, source_archive=None,
              project=PROJECT, runtime_sources=None, cores=None):
     require(not output.exists() and not output.is_symlink(),
-            f"Output already exists: {output}. Use check to verify it, or choose a new output.")
+            f"Output already exists: {output}. Use check-installer to verify it, or choose a new output.")
     require(not output.resolve().is_relative_to(catalogue.resolve()),
             "Bundle output must be outside the input catalogue")
     payload = check_catalogue(catalogue)
@@ -280,7 +282,7 @@ def assemble(catalogue, output, runtime_archive=None, source_archive=None,
             "files": inventory(bundle),
         }
         (bundle / "bundle.json").write_bytes(json_bytes(report))
-        (source_record / "build.json").write_bytes(json_bytes({
+        (assembly / "build.json").write_bytes(json_bytes({
             "format": 1, "installer_sha256": sha256(bundle / "bundle.json"),
             "project_source_sha256": project_digest, "image_source": image_source,
             "payload": payload,
@@ -309,35 +311,48 @@ def write_archive(directory, destination, name):
 def check_assembly(assembly):
     bundle, source = assembly / "installer", assembly / "source"
     report = check_bundle(bundle)
-    source_files(source)
     verify_checksums(source)
-    build = json.loads((source / "build.json").read_text())
+    project_hashes = {name.as_posix(): sha256(source / name) for name in source_files(source)}
+    project_digest = hashlib.sha256(checksum_text(project_hashes).encode()).hexdigest()
+    build = json.loads((assembly / "build.json").read_text())
     require(build.get("format") == 1
             and build["installer_sha256"] == sha256(bundle / "bundle.json")
             and build["payload"] == report["payload"], "Installer and source do not match")
+    require(build["project_source_sha256"] == project_digest,
+            "Project source does not match the assembly record")
+    image_digest = report["payload"]["source_checksums_sha256"]
+    image_source = "." if project_digest == image_digest else "image-source"
+    require(build["image_source"] == image_source,
+            "Image source location does not match the assembly record")
+    if image_source == "image-source":
+        verify_checksums(source / image_source)
+        require(sha256(source / image_source / "SHA256SUMS") == image_digest,
+                "Image source does not match the built image")
+    else:
+        require(not (source / "image-source").exists(), "Unexpected separate image source")
     return report
 
 
-def release(assembly, output, version, base_url):
-    """Package the checked bundle and a launcher that downloads this release through HTTPS."""
-    require(re.fullmatch(r"[0-9][A-Za-z0-9.-]*", version), "Invalid release version")
+def build_package(assembly, output, version, base_url):
+    """Package the checked installer, its source and an HTTPS download launcher."""
+    require(re.fullmatch(r"[0-9][A-Za-z0-9.-]*", version), "Invalid package version")
     url = urlsplit(base_url)
     require(url.scheme == "https" and url.hostname and not url.username
             and not url.password and not url.query and not url.fragment
             and not any(c.isspace() for c in base_url), "Use an HTTPS release directory URL")
-    require(not output.exists() and not output.is_symlink(), "Release output already exists")
-    require(not output.resolve().is_relative_to(assembly.resolve()), "Release must be outside the assembly")
+    require(not output.exists() and not output.is_symlink(), "Package output already exists")
+    require(not output.resolve().is_relative_to(assembly.resolve()), "Package must be outside the assembly")
     report = check_assembly(assembly)
     bundle, source = assembly / "installer", assembly / "source"
     base_version = re.sub(r"-rc[1-9][0-9]*$", "", version)
     entries = json.loads((bundle / "catalogue/installer_data.json").read_text())["os_list"]
     require(len(entries) == 1 and entries[0]["name"] == f"Guix System (Hello Guix {base_version})",
-            "Release version must match the catalogue version (optionally -rcN)")
+            "Package version must match the catalogue version (optionally -rcN)")
     minimum_macos = report["minimum_macos"]
     require(type(minimum_macos) is int and minimum_macos >= 11, "Invalid minimum macOS version")
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".release-", dir=output.parent) as temporary:
-        directory = Path(temporary) / "release"
+    with tempfile.TemporaryDirectory(prefix=".package-", dir=output.parent) as temporary:
+        directory = Path(temporary) / "package"
         directory.mkdir()
         archive = directory / f"hello-guix-{version}.tar.gz"
         write_archive(bundle, archive, "hello-guix")
@@ -374,7 +389,9 @@ def positive_integer(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    build = commands.add_parser("build", help="assemble a new directory from verified inputs")
+    image = commands.add_parser("check-image", help="verify an image catalogue and its saved source")
+    image.add_argument("--catalogue", required=True, type=Path)
+    build = commands.add_parser("build-installer", help="assemble a new directory from verified inputs")
     build.add_argument("--catalogue", required=True, type=Path)
     build.add_argument("--output", required=True, type=Path)
     build.add_argument("--runtime-archive", type=Path)
@@ -383,32 +400,40 @@ def main():
                        help="reuse files from packaging/macos/runtime-sources.json")
     build.add_argument("--cores", type=positive_integer,
                        help="limit parallel libffi build jobs; otherwise use Make’s default")
-    check = commands.add_parser("check", help="verify an installer or its paired source assembly")
+    check = commands.add_parser("check-installer",
+                                help="verify an installer or its paired source assembly")
     target = check.add_mutually_exclusive_group(required=True)
     target.add_argument("--bundle", type=Path)
     target.add_argument("--assembly", type=Path)
-    saved = commands.add_parser("check-release", help="verify the release checksum inventory")
+    saved = commands.add_parser("check-package", help="verify the package checksum inventory")
     saved.add_argument("--directory", required=True, type=Path)
-    publish = commands.add_parser("release", help="package a bundle; does not upload or launch it")
-    publish.add_argument("--assembly", required=True, type=Path)
-    publish.add_argument("--output", required=True, type=Path)
-    publish.add_argument("--version", required=True)
-    publish.add_argument("--base-url", required=True, help="HTTPS directory where these files will be hosted")
+    package = commands.add_parser("build-package",
+                                  help="package an installer; does not upload or launch it")
+    package.add_argument("--assembly", required=True, type=Path)
+    package.add_argument("--output", required=True, type=Path)
+    package.add_argument("--version", required=True)
+    package.add_argument("--base-url", required=True,
+                         help="HTTPS directory where these files will be hosted")
     args = parser.parse_args()
     try:
-        if args.command == "build":
+        if args.command == "check-image":
+            payload = check_catalogue(args.catalogue)
+            print(f"Image and source verified: {args.catalogue}")
+            print(f"Payload SHA-256: {payload['sha256']}")
+            return
+        elif args.command == "build-installer":
             report = assemble(args.catalogue, args.output, args.runtime_archive,
                               args.source_archive, runtime_sources=args.runtime_sources,
                               cores=args.cores)
             print(f"Installer assembled: {args.output / 'installer'}")
             print(f"Source prepared: {args.output / 'source'}")
-        elif args.command == "release":
-            release(args.assembly, args.output, args.version, args.base_url)
-            print(f"Release files prepared: {args.output}. Nothing was uploaded or launched.")
+        elif args.command == "build-package":
+            build_package(args.assembly, args.output, args.version, args.base_url)
+            print(f"Download packages ready: {args.output}")
             return
-        elif args.command == "check-release":
+        elif args.command == "check-package":
             verify_checksums(args.directory)
-            print(f"Release checksum inventory verified: {args.directory}")
+            print(f"Package checksum inventory verified: {args.directory}")
             return
         elif args.assembly is not None:
             report = check_assembly(args.assembly)
@@ -417,7 +442,6 @@ def main():
             report = check_bundle(args.bundle)
             print(f"Bundle verified: {args.bundle}")
         print(f"Payload SHA-256: {report['payload']['sha256']}")
-        print(f"{report['kind']}. No installer or device operation was run.")
     except (OSError, EOFError, ValueError, KeyError, TypeError, tarfile.TarError, zipfile.BadZipFile,
             subprocess.CalledProcessError) as error:
         parser.exit(1, f"Bundle check failed: {error}\n")

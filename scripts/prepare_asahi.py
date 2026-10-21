@@ -75,7 +75,7 @@ def apply_adaptations(source, project):
     return len(patches)
 
 
-def prepare(local_archive, directory=None):
+def prepare(local_archive, directory=None, cache_directory=None):
     project = Path(__file__).resolve().parents[1]
     destination = directory or project / "build/asahi-installer"
     if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
@@ -83,7 +83,8 @@ def prepare(local_archive, directory=None):
 
     pin = json.loads((project / "packaging/macos/asahi-installer-source.json").read_text())
     destination.parent.mkdir(parents=True, exist_ok=True)
-    cached = destination.parent / "cache" / f"asahi-{pin['sha256']}.tar.gz"
+    cache_directory = cache_directory or destination.parent / "cache"
+    cached = cache_directory / f"asahi-{pin['sha256']}.tar.gz"
     with tempfile.TemporaryDirectory(prefix=".prepare-", dir=destination.parent) as temporary:
         temporary = Path(temporary)
         archive = temporary / "source.tar.gz"
@@ -126,11 +127,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, help="use a local archive, with the same checksum check")
     parser.add_argument("--directory", type=Path, help="prepared source directory")
+    parser.add_argument("--cache-directory", type=Path, help="directory for downloaded archives")
     arguments = parser.parse_args()
     if sys.version_info < (3, 12):
         parser.error("Python 3.12 or later is required")
     try:
-        prepare(arguments.archive, arguments.directory)
+        prepare(arguments.archive, arguments.directory, arguments.cache_directory)
     except (OSError, ValueError, tarfile.TarError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Source preparation failed: {error}\n")
 

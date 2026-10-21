@@ -14,8 +14,8 @@ Packages inside the Guix image retain their own terms.
 The matching source download, hello-guix-VERSION-src.tar.gz, extracts to
 hello-guix-VERSION-src/. The project source is at the top of this folder,
 with build instructions in docs/development.md and our changes in patches/.
-The build.json record identifies the sources used for the installer and
-image. Upstream sources are referenced rather than included:
+If the image was built from an earlier source snapshot, that copy is in
+image-source/. Upstream sources are referenced rather than included:
 
   packaging/guix/channels.scm pins the channels containing package recipes.
   packaging/macos/asahi-installer-source.json pins Asahi’s installer source.

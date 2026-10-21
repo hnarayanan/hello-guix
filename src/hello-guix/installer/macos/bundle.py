@@ -63,7 +63,6 @@ def main():
         report = check_bundle(args.bundle)
         print(f"Bundle verified: {args.bundle}")
         print(f"Payload SHA-256: {report['payload']['sha256']}")
-        print(f"{report['kind']}. No installer or device operation was run.")
     except (OSError, ValueError, KeyError) as error:
         parser.exit(1, f"Bundle check failed: {error}\n")
 
