@@ -66,9 +66,9 @@ contents. Hello Guix uses
 first stage: it prepares the storage and boot files, and collects the
 firmware your Mac needs. Enter your macOS administrator password when asked.
 
-For example, suppose macOS occupies all the available space on your drive.
-The following excerpts show the main decisions, using the sizes from our
-256 GB test MacBook Air. The installer calculates the limits for your Mac.
+These excerpts show the main decisions from an installation on our
+256 GB MacBook Air, starting with all available space assigned to macOS.
+The installer calculates the limits for your Mac.
 
 First, choose `r` to make room:
 
@@ -85,15 +85,20 @@ choosing how much space **macOS keeps**. You can enter a size such as
 `100GB`, a percentage such as `50%` of that partition’s current size, or
 `min` for the smallest size the installer allows.
 
-In our test, `min` left about 94 GB for macOS and freed about 151 GB. Your
+In this run, `min` left about 97 GB for macOS and freed about 148 GB. Your
 minimum depends on what is already on your Mac; you can choose a larger
 size to leave more room for future macOS use. Review the amounts before
 entering `y` to start the resize:
 
 ```text
-Minimum new size: 94.06 GB (38.38%)
+  Minimum new size: 96.70 GB (39.45%)
+[...]
 » New size (50%): min
-Resizing will free up 151.05 GB of space.
+
+Resizing will free up 148.40 GB of space.
+
+Note: your system may appear to freeze during the resize.
+This is normal, just wait until the process completes.
 » Continue? (y/N): y
 ```
 
@@ -121,7 +126,9 @@ choose the name you will see in Apple’s Startup Options:
 
 ```text
 » New OS size (max): max
-» OS name (Guix System): Hello Guix
+[...]
+Enter a name for your OS
+» OS name (Guix System): Guix System
 ```
 
 This allocation includes an Apple bootstrap volume of about 2.5 GB and a
@@ -134,16 +141,16 @@ Apple’s existing boot and recovery partitions remain in place.
 
 ```text
 256 GB test drive: about 251 GB reported
-├──   6 GB: existing Apple boot and recovery partitions
-└── 245 GB: macOS partition before resizing
-    ├──  94 GB: remains with macOS
-    └── 151 GB: new Guix installation
-        ├──   6 GB: boot files
-        └── 145 GB: Guix, applications and personal files
+├──   5.9 GB: existing Apple boot and recovery partitions
+└── 245.1 GB: macOS partition before resizing
+    ├──  96.7 GB: remains with macOS
+    └── 148.4 GB: new Guix installation
+        ├──   5.7 GB: boot files
+        └── 142.7 GB: Guix, applications and personal files
 ```
 
 We installed GNOME, Bluetooth, OpenSSH and CUPS within that Guix allocation.
-The 145 GB is the space available to the system, not the amount consumed by
+The 142.7 GB is the space available to the system, not the amount consumed by
 the installation. The 3 GB needed for preparation comes from the macOS
 allocation.
 
@@ -153,9 +160,10 @@ When preparation finishes, follow the installer’s shutdown and power-button
 instructions to enter Apple’s Startup Options. Select the new installation,
 using the name you chose earlier.
 
-> **Placeholder: Apple’s Startup Options.** Show macOS and the new Guix
-> installation, with the Guix entry selected. Caption: “Select the name you
-> gave your new installation.”
+![Apple’s Startup Options showing Macintosh HD, Guix System selected,
+and Options.][startup-options]
+
+*Select the name you gave your new installation.*
 
 The Mac now enters Apple Recovery to authorise the new system. If it asks
 you to **Select a volume to recover**, choose your usual macOS volume and
@@ -166,10 +174,6 @@ your macOS administrator account and password, and explains the changes
 to boot security. These apply only to the new installation. Your existing
 macOS installation keeps its own security settings.
 
-> **Placeholder: boot authorisation.** Show the Terminal window explaining
-> the security changes, with personal details removed. Caption: “Authorise
-> the new Guix installation using your macOS administrator account.”
-
 When the Terminal window reports **Installation complete**, press Enter
 to reboot into Guix’s installer.
 
@@ -178,10 +182,6 @@ to reboot into Guix’s installer.
 Guix asks for your language, keyboard layout, timezone and accounts, then
 offers desktop environments and services. Bluetooth is an optional service
 in the networking choices.
-
-> **Placeholder: Guix’s desktop environment choices.** Show the selection
-> screen with GNOME selected and the other choices visible. Caption:
-> “Choose the desktop environment you would like to use.”
 
 Together, your answers describe your new system. Guix will install it in
 the space you set aside earlier in macOS.
@@ -305,3 +305,5 @@ then `reboot` or `halt`.
 When [reporting a problem](https://github.com/hnarayanan/hello-guix/issues),
 include the release version, Mac model, stage and exact error. Review logs
 before sharing them, as they can contain personal information.
+
+[startup-options]: https://harishnarayanan.org/images/projects/hello-guix/startup-options.jpg

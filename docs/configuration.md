@@ -8,45 +8,16 @@ you’ll find familiar things: your machine’s name, user accounts, desktop
 environment and services. You can change these through Guix’s usual
 configuration system.
 
-We’ll begin with one small change, then look at the parts Hello Guix adds
-for Apple hardware. We’ll also walk through updating the system and
-returning to a saved generation. The Guix manual’s
+We’ll look at the parts Hello Guix adds for Apple hardware, then walk
+through updating the system and returning to a saved generation. The
+Guix manual’s
 [Using the Configuration System][using-configuration] is the place to
 explore further. Here, we’ll focus on preserving the Mac’s hardware support
 as you make the system your own.
 
-## A first change
-
-To try a small change, open `/etc/config.scm` in a text editor with
-administrator privileges. Find the existing `host-name` field and change
-its value, perhaps to:
-
-```scheme
-(host-name "orchard")
-```
-
-Leave the rest of the file unchanged. Save it, then run:
-
-```sh
-sudo guix system reconfigure /etc/config.scm
-```
-
-After the command finishes successfully, check the name:
-
-```sh
-hostname
-```
-
-If you chose `orchard`, it should print:
-
-```text
-orchard
-```
-
 `guix system reconfigure` builds and applies the system your configuration
-describes. You use it after changing packages or services too. The manual’s
-[System Configuration][system-configuration] section covers those choices in
-detail.
+describes. The manual’s [System Configuration][system-configuration]
+section covers packages, services and other choices in detail.
 
 <a id="system-generation"></a>
 
@@ -158,9 +129,8 @@ in to check sound. The Guix Home manual covers the rest of that workflow.
 
 ## How updates work
 
-So far, we’ve changed the configuration while keeping its software
-versions. Updating the software also means keeping the Mac’s boot files
-compatible with it. We’ll look at both parts before making any changes.
+Updating software versions also means keeping the Mac’s boot files
+compatible with them. We’ll look at both parts before making any changes.
 
 ### Locking channel versions
 

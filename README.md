@@ -55,28 +55,17 @@ three stages:
    accounts, a desktop environment and services. Review your choices, let
    it install, then reboot and log in.
 
-> **Placeholder: installation walkthrough.** Three screenshots or a short
-> recording showing Asahi’s space selection, the Guix entry in Apple’s
-> startup options, and Guix’s desktop environment and service choices.
+![Apple’s Startup Options showing Macintosh HD, Guix System selected,
+and Options.][startup-options]
 
 ## A system you can change
 
-Once you’ve booted into your new system, poke around a little. When you’re
-ready to change it, open `/etc/config.scm`. The installer has saved your
-choices there in Scheme. The Guix manual’s
+Once you’ve booted into your new system, poke around a little. The installer
+has saved your choices in `/etc/config.scm`, where you can read the Scheme
+description of your system. The Guix manual’s
 [Using the Configuration System](https://guix.gnu.org/manual/en/html_node/Using-the-Configuration-System.html)
-is a good place to start: it explains how to change packages and services,
-then ask Guix to build and apply the configuration.
-
-After saving your changes to `/etc/config.scm`, run:
-
-```sh
-sudo guix system reconfigure /etc/config.scm
-```
-
-> **Placeholder: recording of a first change.** Edit the hostname in the saved
-> Scheme configuration, reconfigure, and show the new name. Keep the edit and
-> its result visible; shorten the waiting time.
+is a good place to explore the available packages, services and other
+settings.
 
 Hello Guix’s central idea is a small addition to an ordinary Guix
 configuration. We pass your system description to `with-asahi-hardware`, a
@@ -85,7 +74,7 @@ Scheme function that returns one with the Mac’s hardware support included:
 ```scheme
 (with-asahi-hardware
   (operating-system
-    (host-name "orchard")
+    ;; Your accounts, packages, services and other choices.
     ...))
 ```
 
@@ -145,3 +134,4 @@ change, or write to me at
 [mail@harishnarayanan.org](mailto:mail@harishnarayanan.org).
 
 [guix-on-macbook-air]: https://harishnarayanan.org/images/projects/hello-guix/guix-on-macbook-air.jpg
+[startup-options]: https://harishnarayanan.org/images/projects/hello-guix/startup-options.jpg
