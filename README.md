@@ -14,8 +14,8 @@ and Lisp. This project sits at the heart of those three interests. It brings
 GNU Guix, a declarative operating system we can shape in Scheme, to Apple
 Silicon Macs.
 
-> **Placeholder: Guix on the Mac.** A wide photograph of an Apple Silicon
-> laptop running GNOME, with a terminal showing its Scheme configuration.
+![GNU Guix running on a MacBook Air, with GNU Guix, Asahi Guix and
+Hello Guix brought together in its Scheme configuration.][guix-on-macbook-air]
 
 ## Guixstart
 
@@ -143,3 +143,5 @@ I’m [Harish Narayanan](https://harishnarayanan.org/). You’re welcome to
 [report a problem](https://github.com/hnarayanan/hello-guix/issues), suggest a
 change, or write to me at
 [mail@harishnarayanan.org](mailto:mail@harishnarayanan.org).
+
+[guix-on-macbook-air]: https://harishnarayanan.org/images/projects/hello-guix/guix-on-macbook-air.jpg
