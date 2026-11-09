@@ -76,7 +76,7 @@ def apply_adaptations(source, project):
 
 
 def prepare(local_archive, directory=None, cache_directory=None):
-    project = Path(__file__).resolve().parents[1]
+    project = Path(__file__).resolve().parents[2]
     destination = directory or project / "build/asahi-installer"
     if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
         raise FileExistsError(f"Expected an ordinary source directory: {destination}")

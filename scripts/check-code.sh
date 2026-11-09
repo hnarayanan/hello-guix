@@ -7,7 +7,7 @@ case "${1:-python}" in
     python|hardware|source|desktop|configuration|installation-target|installation) ;;
     *) echo "Unknown code check: $1. Run make help." >&2; exit 1 ;;
 esac
-if test "$#" -gt 2; then echo 'Usage: check_code.sh [check] [source-archive]' >&2; exit 1; fi
+if test "$#" -gt 2; then echo 'Usage: check-code.sh [check] [source-archive]' >&2; exit 1; fi
 PYTHON=$(command -v "${PYTHON:-python3}")
 case "$PYTHON" in /*) ;; *) PYTHON="$PWD/$PYTHON" ;; esac
 export PYTHON
@@ -25,7 +25,7 @@ case "${1:-python}" in
         trap 'rm -rf "$temporary"' EXIT
         trap 'exit 130' INT
         trap 'exit 143' TERM
-        "$PYTHON" scripts/prepare_asahi.py --directory "$temporary/asahi-installer" \
+        "$PYTHON" scripts/packaging/asahi_source.py --directory "$temporary/asahi-installer" \
             --cache-directory "$build_dir/cache" ${2:+--archive "$2"}
         export ASAHI_SOURCE=$(cd "$temporary/asahi-installer" && pwd -P)
         "$PYTHON" -m unittest discover -s tests -v ;;

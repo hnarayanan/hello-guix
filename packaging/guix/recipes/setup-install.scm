@@ -22,7 +22,7 @@
 (define setup-guix (input "setup-tools.scm"))
 (define setup-channels (input "../channels.scm"))
 (define setup-interface
-  ((input "../systems/installer-ui.scm")
+  ((input "installer-ui.scm")
    setup-guix (local-file "../channels.scm")))
 
 ;; The Asahi Guix channel packages our RAM installation image.
@@ -33,7 +33,7 @@
   (source (setup-system setup-interface setup-guix setup-channels))
   (build-system installer-build-system)
   (arguments
-   (list #:image-builder (input "../images/ram-image.scm")
+   (list #:image-builder (input "ram-image.scm")
          #:os-name "Guix System"
          #:os-description (string-append "Guix System (Hello Guix " release-version ")")))
   (home-page "https://github.com/hnarayanan/hello-guix")

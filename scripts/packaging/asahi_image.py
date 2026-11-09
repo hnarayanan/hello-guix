@@ -21,7 +21,7 @@ import tempfile
 import uuid
 import zipfile
 
-from build_inputs import (PROJECT, checksum_text, file_hashes, sha256,
+from source_record import (PROJECT, checksum_text, file_hashes, sha256,
                           verify_snapshot)
 
 # %asahi-installer-os-path in the pinned (asahi guix search-paths) module.

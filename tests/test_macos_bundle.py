@@ -18,9 +18,9 @@ from unittest.mock import patch
 import zipfile
 
 PROJECT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT / "scripts"))
-from asahi_payload import stage
-from build_inputs import checksum_text, file_hashes, record_snapshot, sha256, source_files
+sys.path.insert(0, str(PROJECT / "scripts/packaging"))
+from asahi_image import stage
+from source_record import checksum_text, file_hashes, record_snapshot, sha256, source_files
 from macos_bundle import (assemble, build_libffi, build_package, check_assembly, check_bundle,
                           check_catalogue, inventory, main, unpack_runtime, verify_checksums)
 import payload_fixtures as fixtures
@@ -127,7 +127,7 @@ class MacOSBundleTests(unittest.TestCase):
                             runtime_sources=self.runtime_sources, **options)
 
     def run_cli(self, *arguments):
-        return subprocess.run([sys.executable, "-B", str(PROJECT / "scripts/macos_bundle.py"),
+        return subprocess.run([sys.executable, "-B", str(PROJECT / "scripts/packaging/macos_bundle.py"),
                                *map(str, arguments)], capture_output=True, text=True)
 
     def test_cli_checks_image_and_saved_source_without_working_source(self):

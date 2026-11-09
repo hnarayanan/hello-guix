@@ -21,7 +21,7 @@
 
 (define configuration-support
   (primitive-load (string-append (dirname (current-filename))
-                                 "/../packages/configuration-support.scm")))
+                                 "/configuration-support.scm")))
 
 (lambda (runtime channels)
   (define questions

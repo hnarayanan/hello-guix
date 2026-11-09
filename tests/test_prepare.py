@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 PROJECT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
-    "asahi_prepare", PROJECT / "scripts/prepare_asahi.py")
+    "asahi_prepare", PROJECT / "scripts/packaging/asahi_source.py")
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
 
@@ -42,7 +42,7 @@ class SourceTests(unittest.TestCase):
         (self.adaptations / "patches/series").write_text("")
         (self.adaptations / "overlay").mkdir()
         (self.adaptations / "overlay/addition.py").write_text("addition = True\n")
-        location = patch.object(prepare, "__file__", str(self.root / "scripts/prepare_asahi.py"))
+        location = patch.object(prepare, "__file__", str(self.root / "scripts/packaging/asahi_source.py"))
         location.start()
         self.addCleanup(location.stop)
 

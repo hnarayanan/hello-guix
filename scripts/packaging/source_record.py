@@ -16,7 +16,7 @@ import shutil
 import tempfile
 
 
-PROJECT = Path(__file__).resolve().parents[1]
+PROJECT = Path(__file__).resolve().parents[2]
 SOURCE_FILES = (".gitignore", ".guix-channel", "COPYING", "Makefile", "NOTICE", "README.md")
 SOURCE_DIRECTORIES = ("LICENSES", "docs", "hello-guix", "packaging", "patches", "scripts", "tests")
 EXCLUDED_ENTRIES = (

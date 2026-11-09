@@ -29,7 +29,7 @@ revision, and retire them when upstream provides the same facility. Follow
 the licences and source-notice conventions in [COPYING](../COPYING).
 
 If you add a top-level file or directory, classify it in
-[`build_inputs.py`](../scripts/build_inputs.py) so the source snapshot
+[`source_record.py`](../scripts/packaging/source_record.py) so the source snapshot
 includes it. Keep generated files under `build_dir`.
 
 ## Prepare your tools

@@ -7,7 +7,7 @@
   (primitive-load (string-append (dirname (current-filename)) "/installer-runtime.scm")))
 (define configuration-support
   (primitive-load (string-append (dirname (current-filename))
-                                 "/../../packaging/guix/packages/configuration-support.scm")))
+                                 "/../../packaging/guix/recipes/configuration-support.scm")))
 
 (installer-test "check-mac-configuration"
   #~(begin

@@ -29,7 +29,7 @@ start_check() {
     records=$(mktemp -d "$build_dir/$1-XXXXXX")
     source="$records/source"
     trap finish_check EXIT
-    "${PYTHON:-python3}" "$test_project/scripts/build_inputs.py" record --directory "$source"
+    "${PYTHON:-python3}" "$test_project/scripts/packaging/source_record.py" record --directory "$source"
     cd "$source"
     printf 'Records: %s\n' "$records"
     # Authenticate channels once. Use the resulting profile for all test commands.
@@ -39,7 +39,7 @@ start_check() {
 
 finish_check() {
     local status=${1:-$?}
-    if ! "${PYTHON:-python3}" "$test_project/scripts/build_inputs.py" verify --directory "$source"; then
+    if ! "${PYTHON:-python3}" "$test_project/scripts/packaging/source_record.py" verify --directory "$source"; then
         if test "$status" = 0; then status=1; fi
     fi
     printf '\nRecords: %s\n' "$records"
@@ -52,12 +52,12 @@ pinned_guix() {
 
 installer_source() {
     pinned_guix build ${build_options[@]+"${build_options[@]}"} --root="$records/installer-source" \
-        --file=packaging/guix/packages/installer-source.scm
+        --file=packaging/guix/recipes/installer-source.scm
 }
 
 build_runtime() {
     pinned_guix build ${build_options[@]+"${build_options[@]}"} --root="$records/runtime" \
-        --file=packaging/guix/packages/setup-tools.scm
+        --file=packaging/guix/recipes/setup-tools.scm
     runtime=$(readlink -e "$records/runtime")
     mkdir "$records/home"
 }

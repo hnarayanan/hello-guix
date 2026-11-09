@@ -23,7 +23,7 @@ upstream provides this extension. Otherwise, check that it still applies
 and that the resulting image works. The [development guide][development]
 covers building and testing it.
 
-[setup]: ../../packaging/guix/packages/setup-install.scm
-[ram-image]: ../../packaging/guix/images/ram-image.scm
-[source]: ../../packaging/guix/packages/installer-source.scm
+[setup]: ../../packaging/guix/recipes/setup-install.scm
+[ram-image]: ../../packaging/guix/recipes/ram-image.scm
+[source]: ../../packaging/guix/recipes/installer-source.scm
 [development]: ../../docs/development.md

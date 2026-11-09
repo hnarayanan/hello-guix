@@ -25,9 +25,9 @@ import zipfile
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT / "scripts"))
-from asahi_payload import check_os, check_payload, sha256, stage
-from build_inputs import record_snapshot
+sys.path.insert(0, str(PROJECT / "scripts/packaging"))
+from asahi_image import check_os, check_payload, sha256, stage
+from source_record import record_snapshot
 
 
 from payload_fixtures import ENTRY, PACKAGE_DIRECTORY, efi_image, ram_files, root_image
@@ -140,7 +140,7 @@ class PayloadTests(unittest.TestCase):
 
     def test_changed_inputs_are_not_published(self):
         self.write_payload()
-        (self.inputs / "packaging/guix/packages/setup-install.scm").write_text("changed")
+        (self.inputs / "packaging/guix/recipes/setup-install.scm").write_text("changed")
         output = self.directory / "catalogue"
         with self.assertRaisesRegex(ValueError, "Build inputs changed"):
             stage(self.package, output, self.inputs)

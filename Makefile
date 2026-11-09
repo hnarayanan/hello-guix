@@ -83,31 +83,31 @@ help:
 	  'Tools: GUIX, PYTHON. See docs/development.md for the complete flow.'
 
 _plan-image:
-	bash scripts/build_image.sh --dry-run "$(catalogue)"
+	bash scripts/packaging/build-image.sh --dry-run "$(catalogue)"
 
 _build-image:
-	bash scripts/build_image.sh "$(catalogue)"
+	bash scripts/packaging/build-image.sh "$(catalogue)"
 
 _build-installer:
-	"$(PYTHON)" scripts/macos_bundle.py build-installer --catalogue "$(catalogue)" --output "$(assembly)" \
+	"$(PYTHON)" scripts/packaging/macos_bundle.py build-installer --catalogue "$(catalogue)" --output "$(assembly)" \
 	  $(if $(runtime_archive),--runtime-archive "$(runtime_archive)") \
 	  $(if $(source_archive),--source-archive "$(source_archive)") \
 	  $(if $(runtime_sources),--runtime-sources "$(runtime_sources)") \
 	  $(if $(cores),--cores "$(cores)")
 
 _build-package:
-	"$(PYTHON)" scripts/macos_bundle.py build-package --assembly "$(assembly)" \
+	"$(PYTHON)" scripts/packaging/macos_bundle.py build-package --assembly "$(assembly)" \
 	  --output "$(package_dir)" --version "$(version)" --base-url "$(base_url)"
 
 _check-code:
-	bash scripts/check_code.sh "$(only)" "$(source_archive)"
+	bash scripts/check-code.sh "$(only)" "$(source_archive)"
 
 _check-image:
-	"$(PYTHON)" scripts/macos_bundle.py check-image --catalogue "$(catalogue)"
+	"$(PYTHON)" scripts/packaging/macos_bundle.py check-image --catalogue "$(catalogue)"
 
 _check-installer:
-	"$(PYTHON)" scripts/macos_bundle.py check-installer --assembly "$(assembly)"
+	"$(PYTHON)" scripts/packaging/macos_bundle.py check-installer --assembly "$(assembly)"
 	bash "$(assembly)/installer/install.sh" check
 
 _check-package:
-	"$(PYTHON)" scripts/macos_bundle.py check-package --directory "$(package_dir)"
+	"$(PYTHON)" scripts/packaging/macos_bundle.py check-package --directory "$(package_dir)"

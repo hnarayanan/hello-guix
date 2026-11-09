@@ -15,9 +15,9 @@
 
 (define here (dirname (current-filename)))
 (define payload
-  (primitive-load (string-append here "/../../packaging/guix/packages/setup-install.scm")))
+  (primitive-load (string-append here "/../../packaging/guix/recipes/setup-install.scm")))
 (define image-builder
-  (primitive-load (string-append here "/../../packaging/guix/images/ram-image.scm")))
+  (primitive-load (string-append here "/../../packaging/guix/recipes/ram-image.scm")))
 (define setup (operating-system-with-provenance (package-source payload)))
 (define image (image-builder 'hello-guix-vm (package-source payload)))
 (define (tool package command)

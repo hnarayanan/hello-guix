@@ -23,10 +23,10 @@ import zipfile
 # Do not add Python cache files to a source snapshot with recorded checksums.
 sys.dont_write_bytecode = True
 
-from asahi_payload import check_os, json_bytes, require
-from build_inputs import (PROJECT, checksum_text, file_hashes, record_snapshot,
+from asahi_image import check_os, json_bytes, require
+from source_record import (PROJECT, checksum_text, file_hashes, record_snapshot,
                           sha256, source_files)
-from prepare_asahi import apply_adaptations, unpack_source
+from asahi_source import apply_adaptations, unpack_source
 
 sys.path.insert(0, str(PROJECT / "hello-guix/installer/macos"))
 from bundle import check_bundle, inventory

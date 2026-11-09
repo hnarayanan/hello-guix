@@ -14,8 +14,8 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from build_inputs import PROJECT, record_snapshot, source_files, verify_snapshot
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/packaging"))
+from source_record import PROJECT, record_snapshot, source_files, verify_snapshot
 import payload_fixtures as fixtures
 
 
@@ -49,14 +49,14 @@ class BuildTests(unittest.TestCase):
 
     def test_edits_require_another_source_record(self):
         record_snapshot(self.inputs, self.project)
-        (self.project / "packaging/guix/packages/setup-install.scm").write_text("new recipe")
+        (self.project / "packaging/guix/recipes/setup-install.scm").write_text("new recipe")
         with self.assertRaisesRegex(ValueError, "Build inputs changed"):
             record_snapshot(self.inputs, self.project)
-        self.assertNotEqual((self.inputs / "packaging/guix/packages/setup-install.scm").read_text(), "new recipe")
+        self.assertNotEqual((self.inputs / "packaging/guix/recipes/setup-install.scm").read_text(), "new recipe")
 
     def test_missing_added_and_tampered_inputs_are_detected(self):
         record_snapshot(self.inputs, self.project)
-        extra = self.project / "packaging/guix/systems/new-input.json"
+        extra = self.project / "packaging/guix/recipes/new-input.json"
         extra.write_text("new input")
         with self.assertRaisesRegex(ValueError, "Build inputs changed"):
             verify_snapshot(self.inputs, self.project)
@@ -98,7 +98,7 @@ class BuildTests(unittest.TestCase):
     def test_metadata_build_outputs_and_caches_stay_out(self):
         for name in (".git/config", "build/log",
                      ".DS_Store", "hello-guix/.DS_Store",
-                     "scripts/__pycache__/build_inputs.cpython.pyc"):
+                     "scripts/__pycache__/source_record.cpython.pyc"):
             path = self.project / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("not source")
@@ -190,7 +190,7 @@ if "repl" in args:
         sys.exit("Result is not a symlink")
     os.replace(candidate, result)
     sys.exit(0)
-if "--file=packaging/guix/packages/setup-install.scm" in args:
+if "--file=packaging/guix/recipes/setup-install.scm" in args:
     if os.environ.get("FAIL_BUILD"):
         sys.exit(23)
     if os.environ.get("EDIT_LIVE_PROJECT"):
@@ -220,7 +220,7 @@ for argument in args:
 
     def test_image_builds_keep_old_sources_when_development_continues(self):
         self.prepare_fake_guix()
-        recipe = "packaging/guix/packages/setup-install.scm"
+        recipe = "packaging/guix/recipes/setup-install.scm"
         (self.project / recipe).write_text("first edit")
         result = self.make("build", "image")
         self.assertEqual(result.returncode, 0, result.stdout)
@@ -236,7 +236,7 @@ for argument in args:
         self.assertEqual((self.project / "build/image-02/source-record" / recipe).read_text(),
                          "second edit")
         builds = [c for c in self.calls()
-                  if "--file=packaging/guix/packages/setup-install.scm" in c["args"]]
+                  if "--file=packaging/guix/recipes/setup-install.scm" in c["args"]]
         self.assertEqual(len(builds), 2)  # Each invocation reaches Guix's cache.
         self.assertTrue((self.project / "build/payload").is_dir())
         self.assertEqual(list((self.project / "build").glob(".build-*")), [])
@@ -295,7 +295,7 @@ for argument in args:
             result = self.make(verb, "image")
             self.assertEqual(result.returncode, 0, result.stdout)
         builds = [c["args"] for c in self.calls()
-                  if "--file=packaging/guix/packages/setup-install.scm" in c["args"]]
+                  if "--file=packaging/guix/recipes/setup-install.scm" in c["args"]]
         for arguments in builds:
             paths = [arguments[i + 1] for i, arg in enumerate(arguments) if arg == "-L"]
             self.assertEqual(len(paths), 3)
@@ -389,7 +389,7 @@ for argument in args:
             shells.append("/bin/bash")
         for shell in shells:
             with self.subTest(shell=shell):
-                result = subprocess.run([shell, str(self.project / "scripts/build_image.sh")],
+                result = subprocess.run([shell, str(self.project / "scripts/packaging/build-image.sh")],
                                         cwd=self.root, env=self.environment, text=True,
                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 self.assertEqual(result.returncode, 0, result.stdout)
@@ -407,7 +407,7 @@ args = sys.argv[1:]
 source = os.environ.get("ASAHI_SOURCE")
 with pathlib.Path(__file__).with_suffix(".log").open("a") as stream:
     stream.write(json.dumps({"args": args, "source": source}) + "\\n")
-if args[0] == "scripts/prepare_asahi.py":
+if args[0] == "scripts/packaging/asahi_source.py":
     pathlib.Path(args[args.index("--directory") + 1]).mkdir(parents=True, exist_ok=True)
     stage = "prepare"
 else:
@@ -431,7 +431,7 @@ if os.environ.get("HELLO_GUIX_TEST_FAILURE") == stage:
             with self.subTest(arguments=arguments, failure=failure):
                 log.unlink(missing_ok=True)
                 environment["HELLO_GUIX_TEST_FAILURE"] = failure
-                result = subprocess.run([shell, str(self.project / "scripts/check_code.sh"),
+                result = subprocess.run([shell, str(self.project / "scripts/check-code.sh"),
                                          *arguments], cwd=self.root, env=environment,
                                         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 self.assertEqual(result.returncode, 23 if failure else 0, result.stdout)
@@ -440,7 +440,7 @@ if os.environ.get("HELLO_GUIX_TEST_FAILURE") == stage:
                 self.assertEqual(source.name, "asahi-installer")
                 self.assertEqual(source.parent.parent, Path("build with spaces"))
                 self.assertNotEqual(source, Path("build with spaces/asahi-installer"))
-                expected = ["scripts/prepare_asahi.py", "--directory",
+                expected = ["scripts/packaging/asahi_source.py", "--directory",
                             str(source), "--cache-directory", "build with spaces/cache"]
                 if arguments and arguments[-1]:
                     expected += ["--archive", archive]

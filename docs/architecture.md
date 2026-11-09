@@ -243,10 +243,17 @@ hello-guix/
 │       └── linux/             # Run the Guix installation flow
 ├── .guix-channel              # Runtime module root and channel dependencies
 ├── packaging/
-│   ├── guix/                  # Channels, packages, setup system and images
+│   ├── guix/
+│   │   ├── channels.scm       # Build-time channel versions
+│   │   ├── channel/           # Links exposing system modules
+│   │   ├── installer/         # Links exposing installer modules
+│   │   └── recipes/           # Installer ingredients and image construction
 │   └── macos/                 # Runtime sources and upstream notices
 ├── patches/                   # Changes to the three parent projects
-├── scripts/                   # Source preparation and release assembly
+├── scripts/
+│   ├── environment.scm        # Development tools
+│   ├── check-code.sh          # Common test entry point
+│   └── packaging/             # Source preparation, builds and verification
 ├── tests/                     # Local checks and disposable VM tests
 ├── docs/                      # This handbook
 ├── LICENSES/                  # Licence texts
@@ -259,6 +266,11 @@ defines `(hello-guix system hardware)`. Small directories of file links
 under `packaging/guix/` expose just the modules each build needs. The
 channel selects system support; image builds also use the installer
 modules. See the [packaging notes](../packaging/guix/README.md).
+
+`packaging/` holds the build descriptions and resources; `scripts/packaging/`
+contains the programs that prepare, assemble and check them. Local records, caches
+and assembled downloads go under `build_dir` (normally `build/`); Guix
+build outputs remain in its store.
 
 A good first stop is `with-asahi-hardware` in [hardware.scm][hardware].
 It shows how the Mac’s hardware support becomes part of a Guix system.
@@ -296,7 +308,7 @@ building and testing the project.
 [launch]: ../hello-guix/installer/macos/launch.sh
 [setup]: ../hello-guix/installer/linux/setup.scm
 [ram-boot]: ../hello-guix/installer/linux/ram-boot.scm
-[installer-ui]: ../packaging/guix/systems/installer-ui.scm
+[installer-ui]: ../packaging/guix/recipes/installer-ui.scm
 [configuration]: ../hello-guix/installer/linux/configuration.scm
 [target]: ../hello-guix/installer/linux/target.scm
 [install]: ../hello-guix/installer/linux/install.scm
