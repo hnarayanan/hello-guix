@@ -29,6 +29,8 @@
                   "-I" #$(file-append gcc-toolchain "/include")
                   #$(local-file "interrupt-uuid.c") "-o" #$output)))))
 
+(define boot-return (load (string-append (dirname (current-filename)) "/../../system/boot-return.scm")))
+
 (define guest
   (with-extensions (list guile-gcrypt guile-json-3)
      (with-imported-modules
@@ -38,6 +40,7 @@
                                       (eq? (car name) 'hello-guix))))
        (program-file "installation-target-guest"
          #~(begin
+              (setenv "BOOT_RETURN_TEST" #$boot-return)
               (setenv "BOOT_FILES_TEST" #$(local-file "../../system/boot.scm"))
               (primitive-load #$(local-file "installation-target-guest.scm")))
          #:guile guile-3.0-latest))))

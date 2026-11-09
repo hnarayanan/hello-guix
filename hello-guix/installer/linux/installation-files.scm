@@ -8,7 +8,7 @@
   #:use-module (ice-9 ftw)
   #:use-module (srfi srfi-1)
   #:export (call-with-installation-target save-setup-loader
-            call-with-preserved-boot-files finish-installation
+            call-with-preserved-firmware check-installed-boot finish-installation
             prepare-configuration-support))
 
 (define (ordinary-directory path)
@@ -147,19 +147,63 @@ This function does not partition or format disks. The setup system stays in RAM.
           (rename-file temporary backup)
           (sync)))))
 
-(define (call-with-preserved-boot-files esp thunk)
-  "Run THUNK. Then check that Asahi's boot files are unchanged, even if THUNK fails.
-This function compares checksums but does not restore changed files.
-Guix can replace GRUB."
+(define (call-with-preserved-firmware esp thunk)
+  "Run THUNK and check that the Apple firmware and EFI variables are unchanged.
+Check even when THUNK fails. The selected system may replace GRUB and the
+stage-two boot bundle; these checks do not undo an incomplete installation."
   (let* ((files (map (lambda (name) (string-append esp "/" name))
-                     '("m1n1/boot.bin" "ubootefi.var" "vendorfw/firmware.cpio")))
+                     '("ubootefi.var" "vendorfw/firmware.cpio")))
          (hashes (map file-sha256 files)))
     (dynamic-wind
       (const #t)
       thunk
       (lambda ()
         (unless (equal? hashes (map file-sha256 files))
-          (error "An Asahi boot file changed during installation; do not reboot"))))))
+          (error "Apple firmware or EFI variables changed during installation; do not reboot"))))))
+
+(define (check-system-boot system esp)
+  ;; Resolve these links inside the namespace where SYSTEM is installed.
+  (let* ((system (canonicalize-path system))
+         (kernel (string-append system "/kernel/Image"))
+         (bundle (string-append system "/asahi-boot"))
+         (bundle-kernel (string-append bundle "/kernel/Image"))
+         (retained (string-append bundle "/boot.bin"))
+         (deployed (string-append esp "/m1n1/boot.bin")))
+    (for-each
+     (lambda (file)
+       (unless (and (eq? 'regular (stat:type (stat file)))
+                    (> (stat:size (stat file)) 0))
+         (error "Expected a nonempty installed kernel or boot bundle" file)))
+     (list kernel bundle-kernel retained deployed))
+    (unless (string=? (canonicalize-path kernel) (canonicalize-path bundle-kernel))
+      (error "The installed boot bundle does not match the selected system's kernel"))
+    (unless (equal? (file-sha256 retained) (file-sha256 deployed))
+      (error "The deployed boot bundle does not match the selected system; do not reboot"))))
+
+(define (check-installed-boot root)
+  "Verify the selected system and deployed boot bundle inside ROOT.
+The installer requires root privileges. Check in a child process because
+Guix has already unmounted its private COW store: absolute store links must
+resolve inside the target, without changing the caller's filesystem view."
+  (unless (zero? (geteuid)) (error "Checking the installed target requires root"))
+  (ordinary-directory root)
+  (let ((child (primitive-fork)))
+    (when (zero? child)
+      (catch #t
+        (lambda ()
+          (chroot root)
+          (chdir "/")
+          (check-system-boot "/var/guix/profiles/system" "/boot/efi")
+          (primitive-exit 0))
+        (lambda (key . arguments)
+          (false-if-exception
+           (begin
+             (print-exception (current-error-port) #f key arguments)
+             (force-output (current-error-port))))
+          (primitive-exit 1))))
+    (unless (zero? (cdr (waitpid child)))
+      (error "The installed boot files could not be verified; setup files remain available")))
+  #t)
 
 (define (finish-installation root staging)
   ;; The setup system no longer needs these files. Call this function only

@@ -84,9 +84,9 @@
 
 (define* (with-asahi-hardware os #:key (audio? #t) (home-users #f))
   "Return OS with the Asahi kernel, firmware, and hardware services from the
-selected channels. Keep its bootloader, storage identities, applications,
-and personal settings. Keep a matching boot bundle in the system generation.
-Install that bundle on EFI separately.
+selected channels. Keep its GRUB settings, storage identities, applications,
+and personal settings. Retain a matching boot bundle in the system generation
+and deploy it through the removable EFI GRUB installer's normal lifecycle.
 
 Enable audio by default, including without a desktop. Set AUDIO? to #f to
 disable audio setup. Pass HOME-USERS to with-asahi-audio to select the Guix
@@ -110,6 +110,9 @@ active system."
          (result
           (operating-system
            (inherit base)
+           (bootloader
+            (with-asahi-bootloader (operating-system-bootloader base)
+                                  (operating-system-kernel base)))
            (services
             (let ((services (hardware-services (operating-system-user-services base)))
                   (kernel (operating-system-kernel base)))

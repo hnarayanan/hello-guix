@@ -2,57 +2,107 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (define-module (hello-guix system boot)
-  #:use-module (gnu packages base)
-  #:use-module (gnu packages bash)
-  #:use-module (gnu packages bootloaders)
+  #:use-module (gnu bootloader)
+  #:use-module (gnu bootloader grub)
   #:use-module (gnu packages compression)
-  #:use-module (gnu packages guile)
   #:use-module (gnu packages linux)
-  #:use-module (gnu packages gnupg)
   #:use-module (gnu services)
   #:use-module (guix gexp)
   #:use-module (guix modules)
+  #:use-module (guix memoization)
   #:use-module (guix monads)
   #:use-module (guix store)
   #:use-module (asahi guix packages bootloader)
-  #:use-module (asahi guix build modules)
-  #:export (asahi-boot-bundle asahi-boot-service-type))
+  #:export (asahi-boot-bundle asahi-boot-service-type with-asahi-bootloader))
 
-(define (asahi-boot-bundle kernel)
-  "Build the stage-two boot bundle for KERNEL without writes to an EFI partition.
-Keep its inputs so the system generation records its boot code."
-  (define inputs
-    (file-union "asahi-boot-inputs"
-                `(("lib/dtbs" ,(file-append kernel "/lib/dtbs/apple"))
-                  ("libexec/m1n1.bin" ,(file-append asahi-m1n1 "/libexec/m1n1.bin"))
-                  ("libexec/u-boot-nodtb.bin"
-                   ,(file-append asahi-u-boot "/libexec/u-boot-nodtb.bin")))))
+(define (make-asahi-boot-bundle kernel m1n1 u-boot)
+  ;; The format and DTB selection follow write-m1n1/install-bootloader-to-esp
+  ;; in Asahi Guix's (asahi guix build bootloader m1n1), unchanged between
+  ;; ee2e7465 and b9132769. Copy bytes directly instead of invoking a shell;
+  ;; retain gzip -c's filename and timestamp header exactly.
+  ;; https://codeberg.org/asahi-guix/channel/src/commit/b9132769b361431e999f7d166d715ef4c6e101d2/modules/asahi/guix/build/bootloader/m1n1.scm
   (computed-file "asahi-boot"
-    (with-extensions (list guile-sqlite3 guile-gcrypt)
-      (with-imported-modules
-          (source-module-closure '((asahi guix build bootloader m1n1))
-            #:select? (lambda (name)
-                        (or (import-asahi-module? name)
-                            (equal? name '(guix config))
-                            (equal? name '(guix store deduplication)))))
-        #~(begin
-            (use-modules (asahi guix build bootloader m1n1)
-                         (guix build utils))
-            (setenv "PATH" (string-join
-                            (list (string-append #$bash-minimal "/bin")
-                                  (string-append #$coreutils "/bin")
-                                  (string-append #$gzip "/bin")) ":"))
-            ;; Use the channel's public image initializer in a build directory.
-            ;; Its temporary GRUB loader is not part of the resulting bundle.
-            (mkdir "efi")
-            (m1n1-initialize-efi-partition "efi"
-              #:bootloader-package #$inputs #:grub-efi #$grub-efi)
-            (mkdir #$output)
-            (copy-file "efi/m1n1/boot.bin" (string-append #$output "/boot.bin"))
-            (symlink #$kernel (string-append #$output "/kernel"))
-            (symlink #$asahi-m1n1 (string-append #$output "/m1n1"))
-            (symlink #$asahi-u-boot (string-append #$output "/u-boot"))
-            (symlink #$(boot-command) (string-append #$output "/install")))))))
+    (with-imported-modules (source-module-closure '((guix build utils)))
+      #~(begin
+          (use-modules (guix build utils)
+                       (ice-9 popen)
+                       (rnrs io ports))
+          (define (copy-bytes input output)
+            (let loop ((bytes (get-bytevector-n input 65536)))
+              (unless (eof-object? bytes)
+                (put-bytevector output bytes)
+                (loop (get-bytevector-n input 65536)))))
+          (define dtbs
+            (find-files #$(file-append kernel "/lib/dtbs/apple") "\\.*.dtb$"
+                        #:stat stat #:directories? #t))
+          (unless (pair? dtbs)
+            (error "No Apple device trees in the selected kernel" #$kernel))
+          (mkdir #$output)
+          (call-with-output-file (string-append #$output "/boot.bin")
+            (lambda (output)
+              (for-each
+               (lambda (file)
+                 (call-with-input-file file
+                   (lambda (input) (copy-bytes input output)) #:binary #t))
+               (cons #$(file-append m1n1 "/libexec/m1n1.bin") dtbs))
+              (let ((pipe (open-pipe* OPEN_READ #$(file-append gzip "/bin/gzip")
+                                      "-c" #$(file-append u-boot "/libexec/u-boot-nodtb.bin"))))
+                (copy-bytes pipe output)
+                (unless (zero? (close-pipe pipe))
+                  (error "Could not compress the selected U-Boot" #$u-boot))))
+            #:binary #t)
+          (symlink #$kernel (string-append #$output "/kernel"))
+          (symlink #$m1n1 (string-append #$output "/m1n1"))
+          (symlink #$u-boot (string-append #$output "/u-boot"))
+          (symlink #$(boot-command) (string-append #$output "/install"))))))
+
+(define asahi-boot-bundle
+  (mlambda (kernel)
+    "Build the stage-two boot bundle for KERNEL without writes to an EFI partition.
+Keep its inputs so the system generation records its boot code."
+    (make-asahi-boot-bundle kernel asahi-m1n1 asahi-u-boot)))
+
+(define (asahi-boot-installer bundle installer)
+  (with-imported-modules
+      (source-module-closure '((hello-guix system boot-files))
+        #:select? (lambda (name) (eq? (car name) 'hello-guix)))
+    #~(lambda (bootloader target root)
+        (use-modules (hello-guix system boot-files))
+        (install-asahi-bootloader
+         #$installer bootloader #$(file-append bundle "/boot.bin") target root
+         #+(file-append util-linux "/bin/findmnt")))))
+
+;; Memoization keeps reapplication recognisable without accepting arbitrary
+;; bootloaders that happen to use GRUB's name. The bundle is shared with the
+;; retained generation entry and does not depend on the complete system.
+(define asahi-bootloader
+  (mlambda (kernel)
+    (bootloader
+     (inherit grub-efi-removable-bootloader)
+     (installer
+      (asahi-boot-installer
+       (asahi-boot-bundle kernel)
+       (bootloader-installer grub-efi-removable-bootloader))))))
+
+(define (with-asahi-bootloader configuration kernel)
+  "Keep CONFIGURATION's GRUB settings and deploy KERNEL's matching Asahi bundle.
+Support the ordinary removable EFI loader and a single target. Constructing
+this configuration neither discovers a machine nor installs boot files."
+  (let ((loader (bootloader-configuration-bootloader configuration))
+        (targets (bootloader-configuration-targets configuration))
+        (adapted (asahi-bootloader kernel)))
+    (unless (and (list? targets) (= 1 (length targets))
+                 (or (not (car targets))
+                     (and (string? (car targets))
+                          (string-prefix? "/" (car targets)))))
+      (error "Asahi boot deployment requires one absolute EFI target" targets))
+    (cond
+     ((eq? loader adapted) configuration)
+     ((eq? loader grub-efi-removable-bootloader)
+      (bootloader-configuration (inherit configuration) (bootloader adapted)))
+     (else
+      (error "Asahi boot deployment requires the standard removable EFI GRUB loader"
+             (bootloader-name loader))))))
 
 (define (boot-bundle-entry kernel)
   (with-monad %store-monad
@@ -66,16 +116,19 @@ Keep its inputs so the system generation records its boot code."
       #~(begin
           (use-modules (hello-guix system boot-files)
                        (ice-9 match))
+          (define* (install system #:optional (boot-file #f))
+            (catch #t
+              (lambda ()
+                (install-system-boot system #$(file-append util-linux "/bin/findmnt")
+                                     #:boot-file boot-file))
+              (lambda (key . arguments)
+                (display "Boot-bundle operation failed: " (current-error-port))
+                (print-exception (current-error-port) #f key arguments)
+                (exit 1))))
           (match (cdr (command-line))
-            ((system)
-             (catch #t
-               (lambda ()
-                 (install-system-boot system #$(file-append util-linux "/bin/findmnt")))
-               (lambda (key . arguments)
-                 (display "Boot bundle was not installed: " (current-error-port))
-                 (print-exception (current-error-port) #f key arguments)
-                 (exit 1))))
-            (_ (display "Usage: hello-guix-boot SYSTEM-DIRECTORY\n"
+            ((system) (install system))
+            (("--restore" boot-file system) (install system boot-file))
+            (_ (display "Usage: hello-guix-boot [--restore BOOT-FILE] SYSTEM-DIRECTORY\n"
                         (current-error-port))
                (exit 2)))))))
 

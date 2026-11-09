@@ -3,11 +3,32 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Exercise installed-system support with the selected Guix channel profile.
 source "$(dirname "${BASH_SOURCE[0]}")/../support/common.sh"
-start_recorded_check runtime-check
+case "${1:-}" in
+    "") check_name=runtime-check ;;
+    --system) check_name=runtime-system ;;
+    *) echo 'Usage: check-runtime.sh [--system]' >&2; exit 1 ;;
+esac
+if test "$#" -gt 1; then echo 'Usage: check-runtime.sh [--system]' >&2; exit 1; fi
+start_recorded_check "$check_name"
 (
     mkdir "$records/home"
     runtime_command="$guix_command"
     runtime_path="$PATH"
+    # The system fixture shares only this build socket with its host. It cannot
+    # use a remote daemon, whose store would not be available to the container.
+    if test "$check_name" = runtime-system; then
+        daemon_socket=${GUIX_DAEMON_SOCKET:-/var/guix/daemon-socket/socket}
+        case "$daemon_socket" in
+            /*) ;;
+            unix:///*) daemon_socket=${daemon_socket#unix://} ;;
+            *) echo 'Runtime-system requires a local Unix Guix daemon socket.' >&2; exit 1 ;;
+        esac
+        if ! test -S "$daemon_socket"; then
+            printf 'Guix daemon socket is not a local Unix socket: %s\n' "$daemon_socket" >&2
+            exit 1
+        fi
+        export GUIX_DAEMON_SOCKET="$daemon_socket"
+    fi
     daemon=()
     if test -n "${GUIX_DAEMON_SOCKET:-}"; then
         daemon=(GUIX_DAEMON_SOCKET="$GUIX_DAEMON_SOCKET")
@@ -44,9 +65,35 @@ start_recorded_check runtime-check
     runtime_command="$runtime/bin/guix"
     runtime_path="$runtime/bin"
     runtime_guix describe -f channels > channel-channels.scm
+    if test "$check_name" = runtime-system; then
+        printf 'Building the disposable command-path fixture...\n'
+        runtime_guix build --no-grafts ${build_options[@]+"${build_options[@]}"} \
+            --root="$records/fixture" --file="$source/tests/system/boot-cli.scm"
+        env -i HOME="$records/home" PATH="$runtime_path" LC_ALL=C \
+            ${daemon[@]+"${daemon[@]}"} "$records/fixture/timeout" \
+            --signal=TERM --kill-after=20 1200 "$records/fixture/run" "$records"
+        printf '\nNative system command checks passed with the recorded channel profile.\n'
+        exit
+    fi
     printf 'Checking hardware support through the channel profile...\n'
     runtime_guix repl "$source/tests/system/hardware.scm"
     runtime_guix repl "$source/tests/system/boot.scm"
+    runtime_guix repl "$source/tests/system/boot-deployment.scm"
+    runtime_guix repl "$source/tests/system/boot-build.scm" \
+        "${BOOT_REFERENCE:-}" "${MAX_JOBS:-}" "${CORES:-}"
     runtime_guix repl "$source/tests/system/runtime.scm"
+    runtime_guix repl "$source/tests/system/channel-migration.scm" \
+        "$source/tests/system/channel-system.scm" "$records/migration"
+    for variant in original added-package; do
+        runtime_guix system build --no-grafts --save-provenance --derivation \
+            "$records/migration/$variant-provenance/configuration.scm" \
+            > "$records/migration/$variant-recovered.drv"
+        cmp "$records/migration/$variant.drv" "$records/migration/$variant-recovered.drv"
+    done
+    runtime_guix system build --no-grafts --save-provenance --derivation \
+        "$records/migration/local-helpers-provenance/configuration-source/config.scm" \
+        > "$records/migration/local-helpers-recovered.drv"
+    cmp "$records/migration/local-helpers.drv" "$records/migration/local-helpers-recovered.drv"
+    printf 'Saved declarations replayed in fresh Guix processes.\n'
     printf '\nRuntime checks passed with the recorded channel profile.\n'
 ) 2>&1 | tee "$records/check.log"

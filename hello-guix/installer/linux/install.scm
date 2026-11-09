@@ -26,13 +26,14 @@ configuration modules and licenses."
                 (prepare-configuration-support support channels (string-append root "/etc"))
                 (save-setup-loader esp (string-append staging "/setup-bootaa64.efi"))
                 (let ((result
-                       (call-with-preserved-boot-files esp
+                       (call-with-preserved-firmware esp
                          (lambda ()
                            ;; Show Guix's completion page after our checks and cleanup.
                            (run-final-page (acons 'partition '() results) steps #f
                              #:configuration configuration
                              #:on-success (const 'installed))))))
                   (when (eq? result 'installed)
+                    (check-installed-boot root)
                     (finish-installation root staging))
                   result))))))
     (if (eq? result 'installed)

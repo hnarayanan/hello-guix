@@ -2,6 +2,8 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (use-modules (gnu)
+             (gnu bootloader)
+             (gnu bootloader grub)
              (gnu home)
              (gnu home services)
              (gnu home services shells)
@@ -16,6 +18,7 @@
              (gnu packages emacs)
              (gnu packages librewolf)
              (gnu packages window-management)
+             (gnu system keyboard)
              (gnu system linux-initrd)
              (gnu system shadow)
              (asahi guix packages linux)
@@ -27,6 +30,7 @@
              (hello-guix system audio)
              (hello-guix system boot)
              (guix gexp)
+             (guix packages)
              (guix store)
              (guix derivations)
              (guix monads)
@@ -39,7 +43,7 @@
 (define console
   (operating-system
    (host-name "fixture") (timezone "Europe/London") (locale "en_GB.utf8")
-   (bootloader (bootloader-configuration (bootloader grub-efi-bootloader) (targets '("/boot/efi"))))
+   (bootloader (bootloader-configuration (bootloader grub-efi-removable-bootloader) (targets '("/boot/efi"))))
    (file-systems (cons (file-system (device (file-system-label "fictional"))
                                    (mount-point "/") (type "btrfs")) %base-file-systems))
    (users (cons* (user-account (name "alex") (group "users"))
@@ -55,7 +59,24 @@
 (test-eq "retained boot bundle uses the selected kernel" (operating-system-kernel supported)
          (value supported asahi-boot-service-type))
 (test-equal "module order" asahi-initrd-modules (operating-system-initrd-modules supported))
-(test-eq "bootloader untouched" (operating-system-bootloader console) (operating-system-bootloader supported))
+(define native-loader grub-efi-removable-bootloader)
+(define supported-loader
+  (bootloader-configuration-bootloader (operating-system-bootloader supported)))
+(for-each
+ (lambda (field)
+   (test-equal (string-append "GRUB " (car field) " preserved")
+               ((cdr field) native-loader) ((cdr field) supported-loader)))
+ (list (cons "name" bootloader-name)
+       (cons "package" bootloader-package)
+       (cons "configuration file" bootloader-configuration-file)
+       (cons "configuration generator" bootloader-configuration-file-generator)
+       (cons "disk-image installer" bootloader-disk-image-installer)))
+(test-assert "GRUB installer includes Asahi deployment"
+  (not (eq? (bootloader-installer native-loader)
+            (bootloader-installer supported-loader))))
+(test-equal "EFI targets preserved"
+  (bootloader-configuration-targets (operating-system-bootloader console))
+  (bootloader-configuration-targets (operating-system-bootloader supported)))
 (test-eq "filesystems untouched" (operating-system-file-systems console) (operating-system-file-systems supported))
 (test-equal "packages untouched" (operating-system-packages console) (operating-system-packages supported))
 (test-equal "locale untouched" "en_GB.utf8" (operating-system-locale supported))
@@ -69,6 +90,72 @@
 (test-error "root cannot own an audio Home" #t (with-asahi-hardware console #:home-users '("root")))
 (test-error "unknown Home user" #t (with-asahi-hardware console #:home-users '("missing")))
 (test-error "duplicate Home user" #t (with-asahi-hardware console #:home-users '("sam" "sam")))
+
+;; User boot-menu and console choices remain ordinary GRUB configuration.
+(define custom-boot
+  (bootloader-configuration
+   (bootloader native-loader)
+   (targets '("/efi"))
+   (menu-entries (list (menu-entry (label "Recovery")
+                                  (chain-loader "/EFI/BOOT/BOOTAA64.EFI"))))
+   (default-entry 1)
+   (timeout 17)
+   (keyboard-layout (keyboard-layout "gb"))
+   (terminal-outputs '(console serial))
+   (terminal-inputs '(serial))
+   (serial-unit 1)
+   (serial-speed 115200)
+   (device-tree-support? #f)
+   (extra-initrd "/boot/extra-initrd")))
+(define custom-boot-supported
+  (operating-system-bootloader
+   (with-asahi-hardware (operating-system (inherit console)
+                         (bootloader custom-boot)))))
+(for-each
+ (lambda (field)
+   (test-equal (string-append "boot configuration " (car field) " preserved")
+               ((cdr field) custom-boot) ((cdr field) custom-boot-supported)))
+ (list (cons "targets" bootloader-configuration-targets)
+       (cons "menu" bootloader-configuration-menu-entries)
+       (cons "default entry" bootloader-configuration-default-entry)
+       (cons "timeout" bootloader-configuration-timeout)
+       (cons "keyboard" bootloader-configuration-keyboard-layout)
+       (cons "theme" bootloader-configuration-theme)
+       (cons "outputs" bootloader-configuration-terminal-outputs)
+       (cons "inputs" bootloader-configuration-terminal-inputs)
+       (cons "serial unit" bootloader-configuration-serial-unit)
+       (cons "serial speed" bootloader-configuration-serial-speed)
+       (cons "device tree policy" bootloader-configuration-device-tree-support?)
+       (cons "extra initrd" bootloader-configuration-extra-initrd)))
+(test-equal "image sentinel preserved" '(#f)
+  (bootloader-configuration-targets
+   (with-asahi-bootloader (bootloader-configuration
+                          (inherit custom-boot) (targets '(#f))) asahi-linux)))
+(for-each
+ (lambda (targets)
+   (test-error "exactly one absolute EFI target required" #t
+     (with-asahi-bootloader (bootloader-configuration
+                            (inherit custom-boot) (targets targets)) asahi-linux)))
+ '(() ("/efi" "/boot/efi") ("efi")))
+(test-error "non-removable GRUB requires explicit integration" #t
+  (with-asahi-hardware
+   (operating-system (inherit console)
+    (bootloader (bootloader-configuration
+                 (inherit custom-boot) (bootloader grub-efi-bootloader))))))
+(test-error "custom same-name GRUB is not silently replaced" #t
+  (with-asahi-hardware
+   (operating-system (inherit console)
+    (bootloader (bootloader-configuration
+                 (inherit custom-boot)
+                 (bootloader (bootloader (inherit native-loader)
+                              (installer #~(lambda arguments #t)))))))))
+(test-eq "explicit Asahi kernel retained" asahi-linux
+  (operating-system-kernel
+   (with-asahi-hardware (operating-system (inherit console) (kernel asahi-linux)))))
+(test-error "custom kernel still requires explicit integration" #t
+  (with-asahi-hardware
+   (operating-system (inherit console)
+    (kernel (package (inherit asahi-linux) (name "custom-asahi"))))))
 
 (define service-accounts
   (operating-system (inherit console)
@@ -242,6 +329,8 @@
          (value observes-kernel kernel-observer))
 
 (define twice (with-asahi-hardware supported))
+(test-eq "idempotent bootloader configuration"
+         (operating-system-bootloader supported) (operating-system-bootloader twice))
 (test-equal "idempotent service kinds" (map service-kind (operating-system-user-services supported))
             (map service-kind (operating-system-user-services twice)))
 (test-equal "idempotent initrd" (operating-system-initrd-modules supported) (operating-system-initrd-modules twice))

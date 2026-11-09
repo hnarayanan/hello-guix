@@ -66,8 +66,8 @@ welcome page, inside Guix's error handler. Keep the other steps unchanged."
 
     ,(vertical-space 1)
     ,(comment "\
-;; Asahi has already installed m1n1 and U-Boot.
-;; Update GRUB without changing them or the EFI boot order.\n")
+;; Install GRUB and the matching Asahi boot bundle.
+;; Keep the Mac's existing EFI boot order.\n")
     (bootloader
      (bootloader-configuration
       (bootloader grub-efi-removable-bootloader)

@@ -22,19 +22,20 @@ grep -Fx 'VM firmware fixture' /run/asahi-guix/firmware/hello-guix-test
 cmp /etc/config.scm /run/booted-system/configuration-source/config.scm
 cmp /etc/channels.scm /run/booted-system/configuration-source/channels.scm
 diff -r /etc/hello-guix /run/booted-system/configuration-source/hello-guix
-sed -e 's@  boot.bin@  /boot/efi/m1n1/boot.bin@' \
+sed -e 's@  boot.bin@  /boot/efi/m1n1/boot.bin.old@' \
     -e 's@  firmware.cpio@  /boot/efi/vendorfw/firmware.cpio@' \
     -e 's@  ubootefi.var@  /boot/efi/ubootefi.var@' \
     /run/vm-check/boot.sha256 | sha256sum -c -
 id alex
 
-# The setup bundle includes more device trees than the saved Apple bundle.
-# Check that the updater replaces it, then leaves it unchanged on a second run.
+# Installation has already deployed the generation's bundle and preserved
+# the setup bytes as its previous write. Repeated deployment must keep both.
 system=$(readlink -f /run/booted-system)
 # Guix exposes the system kernel through a profile; compare the actual image.
 test "$(readlink -f "$system/kernel/Image")" = "$(readlink -f "$system/asahi-boot/kernel/Image")"
 bash /run/vm-check/boot-bundle.sh "$system/asahi-boot"
-sha256sum /boot/efi/m1n1/boot.bin > /tmp/setup-bundle.sha256
+cmp "$system/asahi-boot/boot.bin" /boot/efi/m1n1/boot.bin
+sha256sum /boot/efi/m1n1/boot.bin /boot/efi/m1n1/boot.bin.old > /tmp/installed-bundle.sha256
 sha256sum /boot/efi/vendorfw/firmware.cpio /boot/efi/ubootefi.var > /tmp/preserved.sha256
 # A generation without a retained bundle must give recovery advice without writing.
 without_bundle=$(mktemp -d)
@@ -44,13 +45,13 @@ if "$system/asahi-boot/install" "$without_bundle" > /tmp/boot-missing.log 2>&1; 
 fi
 grep -F 'This generation has no retained Asahi boot bundle' /tmp/boot-missing.log
 rmdir "$without_bundle"
-sha256sum -c /tmp/setup-bundle.sha256
-"$system/asahi-boot/install" "$system"
-cmp "$system/asahi-boot/boot.bin" /boot/efi/m1n1/boot.bin
-sed 's@/boot.bin$@/boot.bin.old@' /tmp/setup-bundle.sha256 | sha256sum -c -
+sha256sum -c /tmp/installed-bundle.sha256
+"$system/asahi-boot/install" "$system" > /tmp/boot-first.log
+grep -F 'Boot bundle unchanged' /tmp/boot-first.log
+sha256sum -c /tmp/installed-bundle.sha256
 "$system/asahi-boot/install" "$system" > /tmp/boot-repeat.log
 grep -F 'Boot bundle unchanged' /tmp/boot-repeat.log
-sed 's@/boot.bin$@/boot.bin.old@' /tmp/setup-bundle.sha256 | sha256sum -c -
+sha256sum -c /tmp/installed-bundle.sha256
 sha256sum -c /tmp/preserved.sha256
 
 # The installed system must obtain its own DNS settings.

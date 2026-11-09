@@ -48,8 +48,9 @@ small initial environment called an *initrd*. Linux runs this in memory
 to find and mount the main filesystem before starting the installed system.
 
 The Mac also needs a way to start Linux and tell it about the hardware.
-Hello Guix uses the Asahi Guix Channel’s builders to assemble the pieces
-for this into a *boot bundle*, kept in the `asahi-boot/` subdirectory.
+Hello Guix assembles the Asahi components into a *boot bundle*, kept in
+the `asahi-boot/` subdirectory. Construction takes three explicit inputs:
+the selected kernel, m1n1 and U-Boot.
 These are the [m1n1][m1n1] and [U-Boot][u-boot] startup programs, together
 with *device trees* that describe the hardware. The device trees come from
 the system’s kernel, keeping the bundle matched to it. We’ll see how these
@@ -112,6 +113,15 @@ the bundle from EFI. In 0.1, we explicitly install the matching bundle
 there as part of [updates and
 rollback](configuration.md#update-your-system). The active copy appears in
 Linux at `/boot/efi/m1n1/boot.bin`.
+
+The development version connects forward deployment to Guix’s bootloader
+installer. `with-asahi-hardware` preserves the removable GRUB configuration
+and supplies its installer with the selected bundle. At installation time,
+it checks the mounted EFI partition against the Asahi boot identity, runs
+GRUB’s installer, then publishes the bundle. Building and activation alone
+do not write it. Generation switching still needs an explicit bundle return;
+the [developer guide](development.md#boot-deployment-and-return) describes
+the disposable checks and recovery boundary.
 
 Apple’s firmware and boot policy sit beneath all of this, outside Guix’s
 system generations.
@@ -221,11 +231,12 @@ Guix reuses packages already available in setup and places new downloads
 and builds on the destination disk. The installed system receives all
 the packages it needs in its own store.
 
-Guix installs GRUB for the new system, while Asahi’s boot bundle and device
-firmware remain on EFI. The new system keeps our configuration, channel
-versions and supporting Scheme files. Once the temporary setup files are
-removed, we can reboot. The filesystem we filled at `/mnt` becomes `/`,
-and we are running the system we described.
+Guix installs GRUB and the new system’s matching Asahi boot bundle. Apple’s
+firmware and EFI variables stay unchanged. Before removing the temporary
+setup files, the installer verifies the deployed bundle against the system
+it installed. The new system keeps our configuration, channel versions and
+supporting Scheme files. After reboot, the filesystem we filled at `/mnt`
+becomes `/`, and we are running the system we described.
 
 ## Where the code lives
 

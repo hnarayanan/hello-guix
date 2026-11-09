@@ -99,7 +99,7 @@
 (test-assert "the reusable adapter owns kernel and initrd selection"
   (and (contains? '(hello-guix system hardware) configuration)
        (not (field 'kernel)) (not (field 'initrd-modules))))
-(test-assert "GRUB maintenance preserves m1n1 and U-Boot"
+(test-assert "the hardware adapter receives the standard removable EFI loader"
   (contains? '(bootloader grub-efi-removable-bootloader) (field 'bootloader)))
 (test-equal "boot menu identifies the installed system"
   '(label "GNU Guix") (field 'label))
@@ -313,7 +313,7 @@
          '(";; Load Hello Guix's hardware support"
            ";; Add the Mac's hardware support to this system description."
            ";; Keep the same network interface names"
-           ";; Asahi has already installed m1n1 and U-Boot."
+           ";; Install GRUB and the matching Asahi boot bundle."
            ";; Use the Asahi Guix Channel's pre-built packages."
            ";; Save configuration sources for each generation."
            ";; Use a larger console font for the Mac's screen."

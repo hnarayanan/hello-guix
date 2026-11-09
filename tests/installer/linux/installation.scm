@@ -28,10 +28,11 @@
                                                       (lambda () (record 'unmount-target)))))
      (prepare-configuration-support . ,(lambda _ (record 'support)))
      (save-setup-loader . ,(lambda _ (record 'backup)))
-     (call-with-preserved-boot-files . ,(lambda (esp thunk)
+     (call-with-preserved-firmware . ,(lambda (esp thunk)
                                         (record 'protect)
                                         (dynamic-wind (const #t) thunk
                                                       (lambda () (record 'verify)))))
+     (check-installed-boot . ,(lambda _ (record 'verify-bundle)))
      (finish-installation . ,(lambda _ (record 'cleanup))))
     ((gnu installer parted)
      (mount-user-partitions . ,(lambda _ (record 'mount)))
@@ -69,7 +70,7 @@
     (test-equal "production coordinator completes" 'success (run))
     (test-equal "success follows installation, verification, cleanup and unmounts"
       '(mount-target support backup protect mount write review install unmount
-        verify cleanup unmount-target success)
+        verify verify-bundle cleanup unmount-target success)
       calls)
     (set! client? #t)
     (set! calls '())
@@ -85,15 +86,16 @@
          'injected-failure (run))
        (test-assert (string-append "no success on failure: " (symbol->string stage))
          (not (or (memq 'success calls) (memq 'client-success calls))))
-       (when (memq stage '(support backup install verify))
+       (when (memq stage '(support backup install verify verify-bundle))
          (test-assert "setup files remain available on an incomplete installation"
            (not (memq 'cleanup calls)))))
-     '(support backup install verify cleanup unmount-target))
+     '(support backup install verify verify-bundle cleanup unmount-target))
     (set! failure 'install-false)
     (set! calls '())
     (test-equal "ordinary Guix installation failure keeps its failure flow" 'failed (run))
     (test-assert "failed installation neither cleans up nor reports success"
-      (and (memq 'failure calls) (not (memq 'cleanup calls)) (not (memq 'success calls))))
+      (and (memq 'failure calls) (not (memq 'verify-bundle calls))
+           (not (memq 'cleanup calls)) (not (memq 'success calls))))
     (set! failure 'cancel)
     (set! calls '())
     (test-equal "review cancellation returns to Guix navigation" 'abort

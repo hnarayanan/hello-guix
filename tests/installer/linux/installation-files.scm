@@ -10,7 +10,8 @@
 
 (define copy-wifi (@@ (hello-guix installer linux installation-files) copy-wifi-settings))
 (define save-loader (@@ (hello-guix installer linux installation-files) save-setup-loader))
-(define preserve-boot (@@ (hello-guix installer linux installation-files) call-with-preserved-boot-files))
+(define check-system-boot (@@ (hello-guix installer linux installation-files) check-system-boot))
+(define preserve-firmware (@@ (hello-guix installer linux installation-files) call-with-preserved-firmware))
 (define directory (mkdtemp! "/tmp/hello-guix-installation-files-XXXXXX"))
 (define source (string-append directory "/setup"))
 (define target (string-append directory "/target"))
@@ -22,6 +23,8 @@
   (mkdir-p (dirname name))
   (call-with-output-file name (lambda (port) (display text port))))
 (define (contents name) (call-with-input-file name get-string-all))
+(define (check-target)
+  (check-system-boot (string-append target "/var/guix/profiles/system") esp))
 
 (define runner (test-runner-simple))
 (test-runner-current runner)
@@ -64,13 +67,79 @@
 
 (for-each (lambda (name) (put (string-append esp "/" name) "Asahi sentinel\n"))
           '("m1n1/boot.bin" "ubootefi.var" "vendorfw/firmware.cpio"))
-(test-equal "unchanged early boot files allow completion" 'complete
-  (preserve-boot esp (lambda () 'complete)))
-(test-error "installation errors propagate" 'example-failure
-  (preserve-boot esp (lambda () (throw 'example-failure))))
-(test-error "an early boot change prevents successful return" 'misc-error
-  (preserve-boot esp
-    (lambda () (put (string-append esp "/m1n1/boot.bin") "changed\n"))))
+(test-equal "unchanged firmware allows return" 'complete
+  (preserve-firmware esp (lambda () 'complete)))
+(test-error "installation errors propagate when firmware is unchanged" 'example-failure
+  (preserve-firmware esp (lambda () (throw 'example-failure))))
+(for-each
+ (lambda (name)
+   (let ((file (string-append esp "/" name)))
+     (test-error (string-append "changed firmware blocks completion: " name) 'misc-error
+       (preserve-firmware esp (lambda () (put file "changed\n"))))
+     (put file "Asahi sentinel\n")
+     (test-error (string-append "firmware is checked after an installation error: " name)
+       'misc-error
+       (preserve-firmware esp
+         (lambda () (put file "changed\n") (throw 'example-failure))))
+     (put file "Asahi sentinel\n")))
+ '("ubootefi.var" "vendorfw/firmware.cpio"))
+
+;; The initial bundle can differ from the selected generation. Completion
+;; requires the new bytes and their matching kernel, not the setup bundle.
+(define system (string-append directory "/system"))
+(define kernel (string-append directory "/kernel"))
+(define other-kernel (string-append directory "/other-kernel"))
+(define bundle (string-append directory "/bundle"))
+(put (string-append kernel "/Image") "selected kernel\n")
+(put (string-append other-kernel "/Image") "other kernel\n")
+(put (string-append bundle "/boot.bin") "selected bundle\n")
+(mkdir-p system)
+(mkdir-p (string-append target "/var/guix/profiles"))
+(symlink system (string-append target "/var/guix/profiles/system"))
+(symlink kernel (string-append system "/kernel"))
+(symlink kernel (string-append bundle "/kernel"))
+(symlink bundle (string-append system "/asahi-boot"))
+(test-error "unchanged setup bytes are not accepted as the selected bundle" 'misc-error
+  (check-target))
+(test-equal "selected bundle deployment allows completion with firmware unchanged" 'complete
+  (preserve-firmware esp
+    (lambda ()
+      (put (string-append esp "/m1n1/boot.bin") "selected bundle\n")
+      (check-target)
+      'complete)))
+(test-equal "the selected bundle remains deployed" "selected bundle\n"
+  (contents (string-append esp "/m1n1/boot.bin")))
+(put (string-append esp "/m1n1/boot.bin") "arbitrary changed bundle\n")
+(test-error "arbitrary boot changes cannot pass the final check" 'misc-error
+  (check-target))
+(put (string-append esp "/m1n1/boot.bin") "selected bundle\n")
+(delete-file (string-append bundle "/kernel"))
+(symlink other-kernel (string-append bundle "/kernel"))
+(test-error "equal boot bytes do not hide a kernel mismatch" 'misc-error
+  (check-target))
+(delete-file (string-append bundle "/kernel"))
+(symlink kernel (string-append bundle "/kernel"))
+(put (string-append kernel "/Image") "")
+(test-error "an empty selected kernel is rejected" 'misc-error
+  (check-target))
+(put (string-append kernel "/Image") "selected kernel\n")
+(put (string-append bundle "/boot.bin") "")
+(put (string-append esp "/m1n1/boot.bin") "")
+(test-error "matching empty bundles are rejected" 'misc-error
+  (check-target))
+(put (string-append bundle "/boot.bin") "selected bundle\n")
+(put (string-append esp "/m1n1/boot.bin") "selected bundle\n")
+(delete-file (string-append bundle "/boot.bin"))
+(test-error "a missing retained bundle is rejected" 'system-error
+  (check-target))
+(put (string-append bundle "/boot.bin") "selected bundle\n")
+(delete-file (string-append bundle "/kernel"))
+(test-error "a missing retained kernel is rejected" 'system-error
+  (check-target))
+(symlink kernel (string-append bundle "/kernel"))
+(delete-file (string-append target "/var/guix/profiles/system"))
+(test-error "a missing selected generation is rejected" 'system-error
+  (check-target))
 (define support (string-append source "/support"))
 (define configuration-directory (string-append target "/etc"))
 (define channels (string-append source "/channels.scm"))

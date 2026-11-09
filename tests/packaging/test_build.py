@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -234,6 +235,36 @@ for argument in args:
                                  for name in ("compiled one", "compiled two")]
         compiled = dict(zip(map(str, self.profiles), map(str, self.channel_profiles)))
         self.current = self.root / "current"
+        self.runtime_fixture = self.root / "runtime fixture"
+        self.runtime_fixture.mkdir()
+        runner = self.runtime_fixture / "run"
+        runner.write_text("#!" + sys.executable + "\n" + f'''
+import json, os, pathlib, sys
+with pathlib.Path({str(self.root / 'calls')!r}).open("a") as stream:
+    stream.write(json.dumps({{"args": sys.argv[1:], "stage": "boot-cli-run",
+                             "environment": dict(os.environ)}}) + "\\n")
+state = json.loads(pathlib.Path({str(self.runtime_state)!r}).read_text())
+if state.get("fail") == "boot-cli-run":
+    print("fixture failure: boot-cli-run", file=sys.stderr)
+    sys.exit(23)
+print("fixture passed: boot-cli-run")
+''')
+        runner.chmod(0o755)
+        timeout = self.runtime_fixture / "timeout"
+        timeout.write_text("#!" + sys.executable + "\n" + f'''
+import json, os, pathlib, sys
+with pathlib.Path({str(self.root / 'calls')!r}).open("a") as stream:
+    stream.write(json.dumps({{"args": sys.argv[1:], "stage": "boot-cli-timeout",
+                             "environment": dict(os.environ)}}) + "\\n")
+state = json.loads(pathlib.Path({str(self.runtime_state)!r}).read_text())
+if state.get("fail") == "boot-cli-timeout":
+    print("fixture failure: boot-cli-timeout", file=sys.stderr)
+    sys.exit(124)
+if sys.argv[1:4] != ["--signal=TERM", "--kill-after=20", "1200"]:
+    sys.exit("Unexpected timeout arguments")
+os.execv(sys.argv[4], sys.argv[4:])
+''')
+        timeout.chmod(0o755)
         program = "#!" + sys.executable + "\n" + f'''
 import json, os, pathlib, sys
 state = json.loads(pathlib.Path({str(self.runtime_state)!r}).read_text())
@@ -245,6 +276,12 @@ script = next((pathlib.Path(arg.removeprefix("--file=")).name
 compiled = {compiled!r}
 stage = ("channel-profile" if script == "runtime-profile.scm"
          and str(profile) in compiled.values() else script)
+if args[0] == "system":
+    directory = pathlib.Path(args[-1]).parent
+    if directory.name == "configuration-source":
+        directory = directory.parent
+    variant = directory.name.removesuffix("-provenance")
+    stage = variant + "-replay"
 with pathlib.Path({str(self.root / 'calls')!r}).open("a") as stream:
     stream.write(json.dumps({{"args": args, "profile": str(profile), "stage": stage,
                              "environment": dict(os.environ)}}) + "\\n")
@@ -266,7 +303,26 @@ elif args[0] == "build" and any(a.endswith("/tests/system/runtime-channel.scm") 
     root = next(arg.removeprefix("--root=") for arg in args if arg.startswith("--root="))
     pathlib.Path(root).symlink_to(compiled[str(profile)])
     print("fixture passed: runtime channel compilation")
-elif script in ("hardware.scm", "boot.scm", "runtime.scm"):
+elif args[0] == "build" and script == "boot-cli.scm":
+    root = next(arg.removeprefix("--root=") for arg in args if arg.startswith("--root="))
+    pathlib.Path(root).symlink_to({str(self.runtime_fixture)!r})
+    print("fixture passed: boot-cli.scm")
+elif script == "channel-migration.scm":
+    directory = pathlib.Path(args[-1])
+    directory.mkdir()
+    for variant in ("original", "added-package", "local-helpers"):
+        (directory / (variant + ".drv")).write_text("/fixture/" + variant + ".drv\\n")
+        saved = directory / (variant + "-provenance")
+        saved.mkdir()
+        (saved / "configuration.scm").write_text(";; Routing fixture, not a Guix system.\\n")
+        if variant == "local-helpers":
+            (saved / "configuration-source").mkdir()
+            (saved / "configuration-source/config.scm").write_text(";; Local helper fixture.\\n")
+    print("fixture passed: " + stage)
+elif args[:2] == ["system", "build"]:
+    result = "different" if state.get("mismatch") == variant else variant
+    print("/fixture/" + result + ".drv")
+elif script in ("hardware.scm", "boot.scm", "boot-deployment.scm", "boot-build.scm", "runtime.scm"):
     print("fixture passed: " + stage)
 else:
     sys.exit("Unexpected Guix operation: " + repr(args))
@@ -310,12 +366,113 @@ else:
                 self.assertTrue(all(call["profile"] == str(channel_profile) for call in calls[build + 1:]))
                 self.assertFalse(any("-L" in call["args"] for call in calls[build + 1:]))
                 self.assertIn("fixture passed: runtime.scm", (records / "check.log").read_text())
+                migration, = [call for call in calls if call["stage"] == "channel-migration.scm"]
+                self.assertEqual(migration["args"][-2:],
+                                 [str((records / "source/tests/system/channel-system.scm").resolve()),
+                                  str((records / "migration").resolve())])
+                replay = [call for call in calls if call["args"][0] == "system"]
+                self.assertEqual([call["stage"] for call in replay],
+                                 ["original-replay", "added-package-replay",
+                                  "local-helpers-replay"])
+                for call, variant in zip(replay, ("original", "added-package", "local-helpers")):
+                    self.assertEqual(call["args"][:2], ["system", "build"])
+                    self.assertTrue({"--no-grafts", "--save-provenance", "--derivation"}
+                                    .issubset(call["args"]))
+                    declaration = ("configuration-source/config.scm" if variant == "local-helpers"
+                                   else "configuration.scm")
+                    self.assertEqual(Path(call["args"][-1]),
+                                     (records / "migration" / (variant + "-provenance")
+                                      / declaration).resolve())
+                    self.assertEqual((records / "migration" / (variant + ".drv")).read_bytes(),
+                                     (records / "migration" / (variant + "-recovered.drv")).read_bytes())
         calls = self.calls()
         self.assertEqual({call["profile"] for call in calls},
                          set(map(str, self.profiles + self.channel_profiles)))
-        self.assertTrue(all(call["args"][0] in ("repl", "describe", "build") for call in calls))
+        self.assertTrue(all(call["args"][0] in ("repl", "describe", "build", "system") for call in calls))
         self.assertFalse(any("installer" in argument or "setup-tools" in argument
                              for call in calls for argument in call["args"]))
+
+    def local_runtime_socket(self):
+        daemon = socket.socket(socket.AF_UNIX)
+        self.addCleanup(daemon.close)
+        path = self.root / "daemon.sock"
+        daemon.bind(str(path))
+        return path
+
+    def test_runtime_system_route_uses_frozen_channel_and_clears_environment(self):
+        self.prepare_runtime_profiles()
+        daemon = self.local_runtime_socket()
+        self.environment.update(GUIX_DAEMON_SOCKET="unix://" + str(daemon),
+                                GUILE_LOAD_PATH="/personal/override")
+        result = self.make("check", "code", "only=runtime-system", "jobs=1", "cores=2")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        records, = (self.project / "build").glob("runtime-system-*")
+        self.assertEqual((records / "channel-profile").read_text().strip(),
+                         str(self.channel_profiles[0]))
+        self.assertEqual((records / "fixture").resolve(), self.runtime_fixture.resolve())
+        self.assertTrue((records / "source/SHA256SUMS").is_file())
+        calls = self.calls()
+        self.assertEqual([call["stage"] for call in calls],
+                         ["runtime-profile.scm", "describe", "runtime-channel.scm",
+                          "channel-profile", "describe", "boot-cli.scm",
+                          "boot-cli-timeout", "boot-cli-run"])
+        build = calls[-3]
+        self.assertEqual(build["profile"], str(self.channel_profiles[0]))
+        self.assertIn("--max-jobs=1", build["args"])
+        self.assertIn("--cores=2", build["args"])
+        self.assertIn("--no-grafts", build["args"])
+        timeout = calls[-2]
+        self.assertEqual(timeout["args"],
+                         ["--signal=TERM", "--kill-after=20", "1200",
+                          str(records.resolve() / "fixture/run"), str(records.resolve())])
+        runner = calls[-1]
+        self.assertEqual(runner["args"], [str(records.resolve())])
+        self.assertEqual(runner["environment"]["GUIX_DAEMON_SOCKET"], str(daemon))
+        self.assertEqual(runner["environment"]["HOME"], str(records.resolve() / "home"))
+        self.assertNotIn("GUILE_LOAD_PATH", runner["environment"])
+        self.assertFalse(any(call["args"][0] == "time-machine" for call in calls))
+
+    def test_runtime_system_route_retains_build_and_execution_failures(self):
+        self.prepare_runtime_profiles()
+        self.environment["GUIX_DAEMON_SOCKET"] = str(self.local_runtime_socket())
+        for index, (stage, status) in enumerate((("boot-cli.scm", 23),
+                                                  ("boot-cli-timeout", 124),
+                                                  ("boot-cli-run", 23))):
+            with self.subTest(stage=stage):
+                self.runtime_state.write_text(json.dumps({"fail": stage}))
+                (self.root / "calls").unlink(missing_ok=True)
+                result = self.make("check", "code", "only=runtime-system",
+                                   f"build_dir=build/system-failure-{index}")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(f"Error {status}", result.stdout)
+                records, = (self.project / f"build/system-failure-{index}").glob("runtime-system-*")
+                self.assertTrue((records / "source/SHA256SUMS").is_file())
+                self.assertIn("fixture failure: " + stage, (records / "check.log").read_text())
+                self.assertEqual(self.calls()[-1]["stage"], stage)
+
+    def test_runtime_system_requires_a_local_unix_socket_before_building(self):
+        self.prepare_runtime_profiles()
+        for index, daemon in enumerate(("ssh://example.test", "/missing/daemon.sock")):
+            with self.subTest(daemon=daemon):
+                self.environment["GUIX_DAEMON_SOCKET"] = daemon
+                result = self.make("check", "code", "only=runtime-system",
+                                   f"build_dir=build/socket-{index}")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse((self.root / "calls").exists())
+                records, = (self.project / f"build/socket-{index}").glob("runtime-system-*")
+                self.assertTrue((records / "source/SHA256SUMS").is_file())
+                self.assertIn("local Unix", (records / "check.log").read_text())
+
+    def test_runtime_boot_reference_and_resources_are_explicit_arguments(self):
+        self.prepare_runtime_profiles()
+        reference = "/gnu/store/fixture-existing-boot-bundle"
+        result = self.make("check", "code", "only=runtime",
+                           f"boot_reference={reference}", "jobs=1", "cores=2")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        build, = [call for call in self.calls() if call["stage"] == "boot-build.scm"]
+        self.assertEqual(build["args"][-3:], [reference, "1", "2"])
+        self.assertNotIn("BOOT_REFERENCE", build["environment"])
+        self.assertEqual(build["profile"], str(self.channel_profiles[0]))
 
     def test_runtime_checks_freeze_the_profile_and_clear_personal_settings(self):
         self.prepare_runtime_profiles()
@@ -348,7 +505,9 @@ else:
     def test_runtime_check_failures_keep_the_status_and_records(self):
         self.prepare_runtime_profiles()
         stages = ("runtime-profile.scm", "runtime-channel.scm", "channel-profile",
-                  "hardware.scm", "boot.scm", "runtime.scm")
+                  "hardware.scm", "boot.scm", "boot-deployment.scm", "boot-build.scm",
+                  "runtime.scm", "channel-migration.scm",
+                  "original-replay", "added-package-replay", "local-helpers-replay")
         for index, stage in enumerate(stages):
             with self.subTest(stage=stage):
                 self.runtime_state.write_text(json.dumps({"fail": stage}))
@@ -361,6 +520,16 @@ else:
                 self.assertTrue((records / "source/SHA256SUMS").is_file())
                 self.assertIn("fixture failure: " + stage, (records / "check.log").read_text())
                 self.assertEqual(self.calls()[-1]["stage"], stage)
+
+    def test_runtime_check_rejects_a_changed_recovered_derivation(self):
+        self.prepare_runtime_profiles()
+        self.runtime_state.write_text(json.dumps({"mismatch": "original"}))
+        result = self.make("check", "code", "only=runtime")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(self.calls()[-1]["stage"], "original-replay")
+        records, = (self.project / "build").glob("runtime-check-*")
+        self.assertNotEqual((records / "migration/original.drv").read_bytes(),
+                            (records / "migration/original-recovered.drv").read_bytes())
 
     def test_runtime_check_rejects_an_unusable_profile(self):
         self.prepare_runtime_profiles()

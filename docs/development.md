@@ -226,17 +226,93 @@ Missing modules or incompatible definitions are reported by that profile.
 
 It compiles our runtime modules and combines them with the selected Guix and
 Asahi outputs in a separate test profile. The hardware and boot-file checks
-then import Hello Guix from that profile. The profile-retention check also verifies
-that the installed Guix command keeps its complete channel profile.
+then import Hello Guix from that profile. A fictional system configuration
+also exercises an ordinary package change and recovery from Guix's saved
+configuration and channel records. Recovery runs in fresh Guix processes
+with the original declarations moved aside. Its imports need no neighbouring
+copy of Hello Guix. A separate declaration keeps two personal helper files
+explicitly and replays its retained `configuration-source/config.scm` with
+the working copies moved aside.
 
-Channel compilation and the small retention package may need uncached build
-inputs. These checks do not build or activate a complete system. The saved
-working tree has no channel commit: this checks local compilation and imports,
-not authenticated delivery from a published channel.
+These checks may need uncached build inputs. They derive fictional systems
+with grafts disabled and build the channel profile, its retention package,
+native provenance records and small boot fixtures. They do not measure
+normal update costs or build a complete system. Boot-file and generated
+deployment checks use temporary files. The installed system stays unchanged.
+
+The saved working tree has no channel commit. These checks establish local
+recovery with the retained test profile; authenticated pulls and replay from
+a published channel require a committed channel with its introduction.
 
 Repeat with another existing profile to compare inputs. Obtaining newer
 channels is a separate step from this check; it does not run `guix pull` or
 prepare an installer.
+
+### Boot deployment and return
+
+The hardware adapter gives Guix’s removable EFI bootloader an installer
+that receives the selected Asahi bundle. Building a system describes this
+work; installing its bootloader performs it. The same bundle is retained
+in the generation for later use.
+
+`make check code only=runtime` exercises the generated callback and Guix’s
+bootloader installation program against temporary directories, with a fake
+GRUB installer. It checks destination identity, repeated deployment,
+failures and return. Small construction fixtures check the boot bundle's
+binary layout and compression. To also compare against a bundle already in
+the store, add `boot_reference=/gnu/store/…-asahi-boot` to the runtime command.
+This reuses that bundle's kernel, m1n1 and U-Boot inputs and compares the
+result byte for byte; it does not build a kernel.
+
+To exercise the commands themselves, use the same selected profile with:
+
+```sh
+make check code only=runtime-system GUIX=/absolute/path/to/the/profile/bin/guix
+```
+
+This starts a disposable Linux container with its own root filesystem and
+Shepherd. It runs native Guix build, dry-run, reconfiguration, bootloader opt-out
+and generation-switching commands, then the explicit bundle return. Its store
+is read-only; a local Unix daemon socket supplies builds. Records are saved in
+`build/runtime-system-*/`. Kernel and boot files, the boot command line, EFI observations and GRUB are
+fixtures; the command dispatch, activation and deployment code are real.
+The build prepares canonical GRUB inputs too, because native rollback looks
+them up again. The guest skips physical filesystem checks and kexec.
+Both the fixture build and its commands disable grafts; this checks command
+behaviour without measuring normal update costs. The container run is limited
+to 20 minutes, with 20 seconds to terminate before it is killed.
+
+`make check code only=installation-target` also runs
+the callback and recovery command on a FAT partition inside its disposable
+VM, then remounts it to check the saved bytes.
+
+Guix’s generation-switching commands update the boot menu without running
+the installer callback. A return therefore has two parts: select the saved
+system, then restore its boot bundle. Check the selected generation through
+`/var/guix/profiles/system`; running services can still belong to the previous
+configuration until reboot. The recovery command accepts either
+a generation’s retained bundle or an explicit saved file:
+
+```sh
+hello-guix-boot SYSTEM-DIRECTORY
+hello-guix-boot --restore SAVED-BOOT-FILE SYSTEM-DIRECTORY
+```
+
+These are the two forms of the program retained at
+`SYSTEM-DIRECTORY/asahi-boot/install`. The second requires a backup whose
+checksum, system and EFI partition were recorded while that system worked.
+This matters for 0.1: the active installation bundle can differ from the
+bundle retained in its generation. Keep the newer recovery program’s path
+before selecting an older generation, whose command may lack `--restore`.
+
+The tests use small fake bundles; they establish file deployment and return,
+not a successful Mac boot. Before trying an update on hardware, preserve
+and verify the active bundle separately. Guix may already have switched the
+system profile and written its boot menu when bootloader installation fails;
+that failure does not undo the whole reconfiguration. Generation switching
+also leaves the later GRUB installation in place: returning the system and
+early bundle is not a complete EFI rollback. Neither a return nor
+Guix’s generations restores Apple firmware or boot policy.
 
 ## Build and test the installer
 

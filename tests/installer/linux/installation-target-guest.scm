@@ -180,11 +180,50 @@
     (assert "Existing system was accepted for overwrite"
       (refused? (lambda () (install (const #t)))))
     (assert "Existing system refusal left target mounted" (released?))
+    ;; Guix's graphical installer discards its COW store namespace before
+    ;; final verification. Absolute links must resolve in the installed target.
+    (mount device "/mnt" "btrfs")
+    (mount efi-device "/mnt/boot/efi" "vfat" 0 "iocharset=iso8859-1")
+    (let ((system "/gnu/store/00000000000000000000000000000000-target-system")
+          (kernel "/gnu/store/00000000000000000000000000000000-target-kernel")
+          (other "/gnu/store/00000000000000000000000000000000-other-kernel")
+          (bundle "/gnu/store/00000000000000000000000000000000-target-bundle"))
+      (assert "Target-only fixture unexpectedly exists in the setup store"
+        (not (file-exists? system)))
+      (mkdir-p (string-append "/mnt" system))
+      (put (string-append "/mnt" kernel "/Image") "installed kernel")
+      (put (string-append "/mnt" other "/Image") "other kernel")
+      (put (string-append "/mnt" bundle "/boot.bin") "installed bundle")
+      (symlink kernel (string-append "/mnt" system "/kernel"))
+      (symlink bundle (string-append "/mnt" system "/asahi-boot"))
+      (symlink kernel (string-append "/mnt" bundle "/kernel"))
+      (delete-file "/mnt/var/guix/profiles/system")
+      (symlink system "/mnt/var/guix/profiles/system")
+      (put "/mnt/boot/efi/m1n1/boot.bin" "installed bundle")
+      (assert "Target-only system could not be verified" (check-installed-boot "/mnt"))
+      (assert "Verification changed the parent's filesystem view"
+        (and (file-exists? (string-append "/mnt" system))
+             (not (file-exists? system))))
+      (put "/mnt/boot/efi/m1n1/boot.bin" "unrelated bundle")
+      (assert "An unrelated bundle passed target verification"
+        (refused? (lambda () (check-installed-boot "/mnt"))))
+      (put "/mnt/boot/efi/m1n1/boot.bin" "installed bundle")
+      (delete-file (string-append "/mnt" bundle "/kernel"))
+      (symlink other (string-append "/mnt" bundle "/kernel"))
+      (assert "A different kernel passed target verification"
+        (refused? (lambda () (check-installed-boot "/mnt"))))
+      (delete-file (string-append "/mnt" bundle "/kernel"))
+      (symlink kernel (string-append "/mnt" bundle "/kernel"))
+      (assert "Failed verification prevented a checked retry" (check-installed-boot "/mnt")))
+    (umount "/mnt/boot/efi")
+    (umount "/mnt")
+    (display "HELLO-GUIX-INSTALLED-BUNDLE-PASS\n")
     ;; Test the boot updater on this disk's FAT filesystem.
     ;; Include an interrupted update and recovery of the previous bundle.
     (mkdir "/boot-test")
     (mount efi-device "/boot-test" "vfat" 0 "iocharset=iso8859-1")
     (mkdir "/boot-test/files")
+    (mkdir-p "/tmp")
     (setenv "BOOT_TEST_DIRECTORY" "/boot-test/files")
     (primitive-load (getenv "BOOT_FILES_TEST"))
     (umount "/boot-test")
@@ -193,6 +232,28 @@
       (and (string=? "candidate" (call-with-input-file "/boot-test/files/boot.bin" get-string-all))
            (string=? "working" (call-with-input-file "/boot-test/files/boot.bin.old" get-string-all))))
     (umount "/boot-test")
+    ;; Run the generated callback and recovery CLI against a real FAT mount.
+    ;; Capture the fixture partition identity before deployment; only the Apple
+    ;; device-tree observation is substituted inside the test programs.
+    (mkdir-p "/boot/efi")
+    (mount efi-device "/boot/efi" "vfat" 0 "iocharset=iso8859-1")
+    (mkdir-p "/boot/efi/m1n1")
+    (setenv "BOOT_TEST_PARTUUID"
+            (string-trim-both (output (getenv "LSBLK") "--noheadings"
+                                     "--properties-by" "blkid"
+                                     "--output" "PARTUUID" efi-device)))
+    (assert "Fixture EFI identity missing"
+      (not (string-null? (getenv "BOOT_TEST_PARTUUID"))))
+    (mkdir-p "/run")
+    (invoke (getenv "BOOT_RETURN_TEST"))
+    (umount "/boot/efi")
+    (mount efi-device "/boot/efi" "vfat" 0 "iocharset=iso8859-1")
+    (assert "Exact return did not survive FAT remount"
+      (and (string=? "accepted-A"
+                    (call-with-input-file "/boot/efi/m1n1/boot.bin" get-string-all))
+           (string=? "retained-A"
+                    (call-with-input-file "/boot/efi/m1n1/boot.bin.old" get-string-all))))
+    (umount "/boot/efi")
     (display "HELLO-GUIX-TARGET-PASS\n"))
   (lambda args
     (write args) (newline) (display "HELLO-GUIX-TARGET-FAIL\n")))
