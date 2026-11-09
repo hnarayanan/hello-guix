@@ -1,0 +1,1 @@
+../../../../hello-guix/apple-silicon.scm

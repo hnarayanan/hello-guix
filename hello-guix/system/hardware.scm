@@ -14,8 +14,9 @@
   #:use-module (asahi guix services udev)
   #:use-module (hello-guix system audio)
   #:use-module (hello-guix system boot)
+  #:use-module (hello-guix system firmware)
   #:use-module (srfi srfi-1)
-  #:export (with-asahi-hardware))
+  #:export (with-asahi-hardware on-apple-silicon))
 
 (define (add-service services addition)
   (let ((matches (filter (lambda (service)
@@ -67,7 +68,12 @@
           services)
          (service iwd-service-type)))))
 
-(define (hardware-services services)
+(define (hardware-services services firmware)
+  (when (and firmware
+             (any (lambda (entry)
+                    (eq? (service-kind entry) asahi-firmware-service-type))
+                  services))
+    (error "Explicit firmware cannot use the Asahi ESP-probing firmware service"))
   (let ((modules (filter (lambda (entry)
                            (eq? (service-kind entry) kernel-module-loader-service-type))
                          services)))
@@ -80,18 +86,10 @@
                         (map (lambda (entry) (if (eq? entry (car modules)) loader entry)) services))))
       (fold (lambda (addition result) (add-service result addition))
             (network-services updated)
-            (list (service asahi-firmware-service-type) %udev-mtd-by-name-service)))))
+            (append (if firmware '() (list (service asahi-firmware-service-type)))
+                    (list %udev-mtd-by-name-service))))))
 
-(define* (with-asahi-hardware os #:key (audio? #t) (home-users #f))
-  "Return OS with the Asahi kernel, firmware, and hardware services from the
-selected channels. Keep its GRUB settings, storage identities, applications,
-and personal settings. Retain a matching boot bundle in the system generation
-and deploy it through the removable EFI GRUB installer's normal lifecycle.
-
-Enable audio by default, including without a desktop. Set AUDIO? to #f to
-disable audio setup. Pass HOME-USERS to with-asahi-audio to select the Guix
-Home environments this system manages. This function does not inspect the
-active system."
+(define (adapt-system os firmware audio? home-users)
   (unless (and (memq (operating-system-kernel os) (list linux-libre asahi-linux))
                (eq? (operating-system-initrd os) base-initrd)
                (not (operating-system-hurd os)))
@@ -107,15 +105,25 @@ active system."
            (inherit os)
            (kernel asahi-linux)
            (initrd-modules (delete-duplicates (append asahi-initrd-modules extra-modules)))))
+         (with-firmware
+          (if firmware
+              (operating-system
+               (inherit base)
+               (firmware
+                (let ((existing (operating-system-firmware base)))
+                  (if (memq firmware existing) existing
+                      (append existing (list firmware))))))
+              base))
          (result
           (operating-system
-           (inherit base)
+           (inherit with-firmware)
            (bootloader
-            (with-asahi-bootloader (operating-system-bootloader base)
-                                  (operating-system-kernel base)))
+            (with-asahi-bootloader (operating-system-bootloader with-firmware)
+                                  (operating-system-kernel with-firmware)))
            (services
-            (let ((services (hardware-services (operating-system-user-services base)))
-                  (kernel (operating-system-kernel base)))
+            (let ((services (hardware-services
+                             (operating-system-user-services with-firmware) firmware))
+                  (kernel (operating-system-kernel with-firmware)))
               (when (any (lambda (entry)
                            (and (eq? (service-kind entry) asahi-boot-service-type)
                                 (not (eq? (service-value entry) kernel))))
@@ -123,3 +131,27 @@ active system."
                 (error "The boot service must use the system's Asahi kernel"))
               (add-service services (service asahi-boot-service-type kernel)))))))
     (if audio? (with-asahi-audio result #:home-users home-users) result)))
+
+(define* (with-asahi-hardware os #:key (audio? #t) (home-users #f))
+  "Return OS with the Asahi kernel, firmware, and hardware services from the
+selected channels. Keep its GRUB settings, storage identities, applications,
+and personal settings. Retain a matching boot bundle in the system generation
+and deploy it through the removable EFI GRUB installer's normal lifecycle.
+
+Enable audio by default, including without a desktop. Set AUDIO? to #f to
+disable audio setup. Pass HOME-USERS to with-asahi-audio to select the Guix
+Home environments this system manages. This legacy interface discovers the
+firmware on the running Mac during activation, as in Hello Guix 0.1."
+  (adapt-system os #f audio? home-users))
+
+(define* (on-apple-silicon os #:key firmware (audio? #t) (home-users #f))
+  "Return OS with Apple Silicon hardware support and explicit FIRMWARE.
+FIRMWARE is a file-like directory whose paths are relative to Linux's firmware
+search root, for example brcm/ and apple/. Retain its exact contents through
+the ordinary operating-system firmware field, alongside existing firmware.
+No firmware is discovered from the running machine or extracted from EFI.
+
+This supplies firmware during ordinary system activation; it does not yet
+add firmware to the initrd. AUDIO? and HOME-USERS have the same meaning as
+in with-asahi-hardware."
+  (adapt-system os (apple-silicon-firmware firmware) audio? home-users))

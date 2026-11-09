@@ -23,10 +23,12 @@
              (gnu system shadow)
              (asahi guix packages linux)
              (asahi guix initrd)
+             (asahi guix services firmware)
              ((asahi guix services sound) #:prefix asahi:)
              ((asahi guix home services sound) #:prefix asahi:)
              ((gnu home services sound) #:prefix generic:)
-             (hello-guix system hardware)
+             ((hello-guix system hardware) #:select (with-asahi-hardware))
+             (hello-guix apple-silicon)
              (hello-guix system audio)
              (hello-guix system boot)
              (guix gexp)
@@ -346,6 +348,96 @@
 (test-equal "remove GNOME from adapted record retains audio"
             (map shepherd-service-provision audio-session)
             (map shepherd-service-provision (session-services (home gnome-removed "alex"))))
+
+;; The new interface describes explicit firmware. This path is deliberately
+;; absent: constructing and inspecting the system must not read its contents.
+;; The firmware build/replay fixture separately checks the retained bytes.
+(define declared-firmware
+  (local-file "fixtures/not-present-apple-firmware" #:recursive? #t))
+(define declared-base
+  (operating-system
+    (inherit console)
+    (firmware (list (car %base-firmware)))
+    (services (cons custom-login %base-services))))
+(test-error "explicit adaptation requires firmware" #t
+  (on-apple-silicon declared-base))
+(for-each
+ (lambda (input)
+   (test-error "explicit firmware must be a file-like input" #t
+     (on-apple-silicon declared-base #:firmware input)))
+ (list #f 42 "hello-guix/firmware"))
+(test-error "explicit adaptation requires an operating system" #t
+  (on-apple-silicon #f #:firmware declared-firmware))
+(define declared
+  (on-apple-silicon declared-base #:firmware declared-firmware))
+(test-assert "explicit adaptation returns an ordinary operating system"
+  (operating-system? declared))
+(test-equal "explicit firmware does not install the probing activation service"
+  '() (entries declared asahi-firmware-service-type))
+(test-equal "legacy firmware probing remains available"
+  1 (length (entries supported asahi-firmware-service-type)))
+(test-error "explicit firmware rejects a conflicting probing service" #t
+  (on-apple-silicon
+   (operating-system
+     (inherit declared-base)
+     (services (cons (service asahi-firmware-service-type)
+                     (operating-system-user-services declared-base))))
+   #:firmware declared-firmware))
+(define supplied-firmware (operating-system-firmware declared-base))
+(define prepared-firmware
+  (remove (lambda (input) (memq input supplied-firmware))
+          (operating-system-firmware declared)))
+(test-equal "explicit adaptation preserves user firmware and its order"
+  supplied-firmware
+  (filter (lambda (input) (memq input supplied-firmware))
+          (operating-system-firmware declared)))
+(test-equal "explicit adaptation adds one prepared firmware input"
+  1 (length prepared-firmware))
+(test-assert "prepared firmware remains file-like before lowering"
+  (every file-like? prepared-firmware))
+(for-each
+ (lambda (field)
+   (test-equal (string-append "explicit adaptation preserves " (car field))
+     ((cdr field) declared-base) ((cdr field) declared)))
+ (list (cons "hostname" operating-system-host-name)
+       (cons "locale" operating-system-locale)
+       (cons "accounts" operating-system-users)
+       (cons "filesystems" operating-system-file-systems)
+       (cons "packages" operating-system-packages)))
+(test-eq "explicit adaptation preserves personal login policy"
+  custom-login (car (entries declared elogind-service-type)))
+(test-eq "explicit firmware keeps the Asahi kernel"
+  asahi-linux (operating-system-kernel declared))
+(test-eq "explicit firmware keeps the matching boot bundle"
+  (operating-system-kernel declared) (value declared asahi-boot-service-type))
+(test-equal "explicit firmware keeps the EFI target"
+  (bootloader-configuration-targets (operating-system-bootloader declared-base))
+  (bootloader-configuration-targets (operating-system-bootloader declared)))
+(test-eq "explicit firmware keeps normal Asahi boot deployment"
+  supported-loader
+  (bootloader-configuration-bootloader (operating-system-bootloader declared)))
+(test-equal "explicit firmware keeps the early kernel modules"
+  (operating-system-initrd-modules supported)
+  (operating-system-initrd-modules declared))
+(test-equal "explicit firmware keeps speaker protection"
+  1 (length (entries declared speakersafetyd-service-type)))
+(test-equal "explicit firmware keeps the ordinary audio session"
+  (map shepherd-service-provision audio-session)
+  (map shepherd-service-provision (session-services (home declared "alex"))))
+(define declared-twice
+  (on-apple-silicon declared #:firmware declared-firmware))
+(test-equal "reapplying the same firmware preserves its complete selection"
+  (operating-system-firmware declared)
+  (operating-system-firmware declared-twice))
+(test-equal "reapplying explicit firmware preserves service kinds"
+  (map service-kind (operating-system-user-services declared))
+  (map service-kind (operating-system-user-services declared-twice)))
+(test-eq "reapplying explicit firmware preserves the bootloader configuration"
+  (operating-system-bootloader declared)
+  (operating-system-bootloader declared-twice))
+(test-equal "reapplying explicit firmware preserves audio Homes"
+  '("alex" "sam")
+  (map car (value declared-twice guix-home-service-type)))
 
 ;; Calculate system derivations without building packages or activating hardware.
 ;; After a desktop change, check the original declaration again.

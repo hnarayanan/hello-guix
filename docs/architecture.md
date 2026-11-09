@@ -39,6 +39,28 @@ Guix then builds the system from this modified description in the usual
 way. Using the same function during installation and later reconfiguration
 keeps the hardware support part of each system we describe.
 
+The developing channel interface makes the firmware input explicit. We can
+write an ordinary system declaration, then finish with:
+
+```scheme
+(use-modules (guix gexp) (hello-guix apple-silicon))
+
+(on-apple-silicon
+ my-system
+ #:firmware (local-file "hello-guix/firmware" #:recursive? #t))
+```
+
+Here `my-system` is our `operating-system` value. The directory contains
+unpacked device firmware, with paths such as `brcm/` and `apple/`. Guix
+imports these files into its store and keeps them with the system's
+firmware inputs. This interface uses Guix's firmware service, so activation
+uses the declared files instead of discovering firmware on EFI. It does
+not yet supply firmware in the initrd; the earlier startup boundary
+[described below](#making-firmware-available-to-drivers) remains open.
+The 0.1 installer still generates the existing `with-asahi-hardware` form;
+preparing this explicit input for an installed system is a separate migration
+step still to be implemented.
+
 ### The files Guix builds
 
 Guix turns this description into a set of files we can install. It creates
@@ -248,6 +270,7 @@ you and begin exploring.
 ```text
 hello-guix/
 ├── hello-guix/
+│   ├── apple-silicon.scm      # Public system adaptation
 │   ├── system/                # Hardware, audio, boot bundles and saved source
 │   └── installer/
 │       ├── macos/             # Download, check and launch Asahi preparation

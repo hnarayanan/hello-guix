@@ -12,6 +12,7 @@
              (gnu installer user)
              (gnu installer utils)
              (guix build utils)
+             (guix channels)
              ((guix tests) #:select (mock))
              (hello-guix installer linux configuration)
              (hello-guix installer linux target)
@@ -63,8 +64,9 @@
 (define efi-uuid "A1B2-C3D4")
 
 (define* (generate #:optional (answers results) (formatters steps)
-                   #:key (root root-uuid) (efi efi-uuid))
-  (system-configuration formatters answers #:root-uuid root #:efi-uuid efi))
+                   #:key (root root-uuid) (efi efi-uuid) channels)
+  (system-configuration formatters answers #:root-uuid root #:efi-uuid efi
+                        #:channels channels))
 
 (define configuration (generate))
 (define* (field name #:optional (forms configuration))
@@ -117,6 +119,58 @@
   (not (contains? '(hello-guix installer linux configuration) configuration)))
 (test-equal "EFI UUID is canonicalized"
   (field 'file-systems) (field 'file-systems (generate #:efi "a1b2-c3d4")))
+
+;; Fictional trust metadata tests the writer's data contract, not authentication.
+;; The authenticated-channel fixture separately checks actual signed ancestry.
+(define test-channels
+  (map (lambda (name)
+         (channel
+          (name name)
+          (url (string-append "https://example.invalid/" (symbol->string name)))
+          (branch "test-branch")
+          (commit "1111111111111111111111111111111111111111")
+          (introduction
+           (make-channel-introduction
+            "2222222222222222222222222222222222222222"
+            (openpgp-fingerprint
+             "3333 3333 3333 3333 3333 3333 3333 3333 3333 3333")))))
+       '(guix asahi hello-guix personal)))
+(define channel-configuration (generate #:channels test-channels))
+(test-assert "channel configuration imports Hello normally"
+  (and (contains? '(hello-guix system hardware) channel-configuration)
+       (not (contains? 'add-to-load-path channel-configuration))
+       (not (contains? '(hello-guix system configuration-retention)
+                       channel-configuration))
+       (not (contains? 'configuration-source-service-type channel-configuration))))
+(test-assert "channel configuration retains the evaluating Guix profile"
+  (contains? '(guix (running-guix)) (field 'services channel-configuration)))
+(test-assert "future defaults preserve trust, branches and caller channels"
+  (contains?
+   `(channels (list ,@(map (lambda (selected)
+                            (channel->code
+                             (channel (inherit selected) (commit #f))))
+                          test-channels)))
+   (field 'services channel-configuration)))
+(test-equal "writer leaves the selected revisions unchanged"
+  (make-list 4 "1111111111111111111111111111111111111111")
+  (map channel-commit test-channels))
+(test-assert "future defaults are literal source data"
+  (and (not (contains? 'current-channels channel-configuration))
+       (not (contains? 'load channel-configuration))))
+(for-each
+ (lambda (channels)
+   (test-error "incomplete or unauthenticated channel metadata is rejected"
+     'misc-error (generate #:channels channels)))
+ (list '() (cdr test-channels)
+       (cons (car test-channels) test-channels)
+       (map (lambda (selected)
+              (if (eq? 'hello-guix (channel-name selected))
+                  (channel (inherit selected) (introduction #f)) selected))
+            test-channels)))
+(test-equal "validated target accepts the explicit channel handoff"
+  channel-configuration
+  (target-system-configuration steps results verified-test-target
+                               #:channels test-channels))
 
 ;; The test program validates this target in tests/installer/linux/target.scm first.
 ;; Check that Guix's configuration writer accepts it.
@@ -296,7 +350,21 @@
 (define output-directory
   (match (command-line)
     ((_ directory) directory)
-    (_ (error "Expected one scratch output directory"))))
+    ((_ directory channels-file) directory)
+    (_ (error "Expected a scratch directory and optional evaluated channels file"))))
+;; A signed-channel handoff run supplies its actual evaluated channel records.
+;; The ordinary unit run emits only the fictional example above.
+(define output-channel-configuration
+  (match (command-line)
+    ((_ _ channels-file)
+     (generate
+      #:channels
+      (save-module-excursion
+       (lambda ()
+         (set-current-module (make-fresh-user-module))
+         (module-use! (current-module) (resolve-interface '(guix channels)))
+         (primitive-load channels-file)))))
+    (_ channel-configuration)))
 (define output-file (string-append output-directory "/example-system.scm"))
 (when (file-exists? output-file)
   (error "Refusing to replace an existing configuration example"))
@@ -306,7 +374,8 @@
    (configuration->file (cdr example)
      #:file-name (string-append output-directory "/" (car example) "-system.scm")))
  (list (cons "gnome" gnome) (cons "connman" connman)
-       (cons "dhcp" dhcp) (cons "sway" sway)))
+       (cons "dhcp" dhcp) (cons "sway" sway)
+       (cons "channel" output-channel-configuration)))
 (define text (call-with-input-file output-file get-string-all))
 (test-assert "generated configuration explains the Hello Guix additions"
   (every (lambda (explanation) (string-contains text explanation))

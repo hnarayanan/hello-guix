@@ -8,5 +8,7 @@
 (file-union "hello-guix-configuration-support"
             `(("modules/hello-guix/system"
                ,(local-file "../../../hello-guix/system" #:recursive? #t))
+              ("modules/hello-guix/apple-silicon.scm"
+               ,(local-file "../../../hello-guix/apple-silicon.scm"))
               ("COPYING" ,(local-file "../../../COPYING"))
               ("LICENSES" ,(local-file "../../../LICENSES" #:recursive? #t))))

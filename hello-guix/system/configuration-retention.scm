@@ -10,13 +10,17 @@
 
 (define (configuration-source file)
   "Keep FILE and its support files in a portable directory.
-Include only configuration sources, not the other files in /etc."
-  (let ((directory (dirname file)))
+Include only configuration sources, not the other files in /etc. Firmware
+under hello-guix/firmware belongs to the system's firmware inputs instead."
+  (let* ((directory (dirname file))
+         (support (string-append directory "/hello-guix"))
+         (firmware (delay (string-append (canonicalize-path support) "/firmware"))))
     (file-union "configuration-source"
                 `(("config.scm" ,(local-file file "config.scm"))
                   ("channels.scm" ,(local-file (string-append directory "/channels.scm")))
-                  ("hello-guix" ,(local-file (string-append directory "/hello-guix")
-                                            #:recursive? #t))))))
+                  ("hello-guix" ,(local-file support #:recursive? #t
+                                  #:select? (lambda (file properties)
+                                              (not (string=? file (force firmware))))))))))
 
 (define (configuration-source-entry source)
   ;; This reference prevents garbage collection of the source while the

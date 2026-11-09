@@ -200,6 +200,19 @@ two build systems, so allow more time and space. Their
 [test script](../tests/system/check-source.sh) accepts `--dry-run` to preview
 the work, and `--desktop` to include both systems.
 
+If you already have an authenticated profile containing Guix, Asahi and
+Hello Guix, also check the generated declaration through that profile:
+
+```sh
+make check code only=configuration channel_profile=/absolute/path/to/the/profile
+```
+
+The writer uses its channel records to generate ordinary imports and future
+pull defaults. The selected profile then evaluates the declaration and
+replays its saved copy in a fresh process. The normal configuration checks
+still use the release tools; this optional step checks the handoff to the
+runtime channel.
+
 ### Check against another Guix
 
 The checks above use our recorded release channels. To see how the installed
@@ -234,6 +247,14 @@ copy of Hello Guix. A separate declaration keeps two personal helper files
 explicitly and replays its retained `configuration-source/config.scm` with
 the working copies moved aside.
 
+A synthetic firmware fixture exercises `on-apple-silicon` with an explicit
+file-like input. It builds only small firmware/source wrappers and native
+provenance, checks retained bytes and references, and derives systems after
+package, hostname and firmware changes. Recovery copies the saved declaration
+and restores its retained firmware at the declared relative path, then checks
+an exact derivation match in a fresh process. This tests explicit input
+retention and replay, not automatic configuration rewriting or real hardware.
+
 These checks may need uncached build inputs. They derive fictional systems
 with grafts disabled and build the channel profile, its retention package,
 native provenance records and small boot fixtures. They do not measure
@@ -247,6 +268,27 @@ a published channel require a committed channel with its introduction.
 Repeat with another existing profile to compare inputs. Obtaining newer
 channels is a separate step from this check; it does not run `guix pull` or
 prepare an installer.
+
+### Check authenticated channel delivery
+
+To exercise fetching and replaying Hello Guix as a signed channel, use the
+existing profile containing Guix and Asahi, without Hello Guix:
+
+```sh
+make check code only=runtime-channel GUIX=/absolute/path/to/the/profile/bin/guix
+```
+
+This creates a disposable repository and signing key, then uses Guix to
+check the channel's authentication and exact-revision replay. It starts
+with the recorded profile directly, so Hello's modules come through the
+signed repository. Records go in `build/runtime-channel-*/`; personal Git,
+GnuPG and Guix caches are kept separate from the test.
+
+The fixture reuses retained Guix and Asahi inputs. It establishes local
+channel delivery; a full `guix time-machine` bootstrap from public channels
+remains a separate check. Building the test tools may need uncached inputs.
+Use `jobs` and `cores` to limit build work; the authentication run has a
+ten-minute limit, followed by a twenty-second termination grace period.
 
 ### Boot deployment and return
 

@@ -14,6 +14,7 @@ jobs ?=
 cores ?=
 vm_memory ?=
 boot_reference ?=
+channel_profile ?=
 only ?= python
 runtime_archive ?=
 source_archive ?=
@@ -35,6 +36,7 @@ export MAX_JOBS = $(jobs)
 export CORES = $(cores)
 export VM_MEMORY = $(vm_memory)
 export BOOT_REFERENCE = $(boot_reference)
+export CHECK_CHANNEL_PROFILE = $(channel_profile)
 
 operations := plan-image build-image build-installer build-package \
               check-code check-image check-installer check-package
@@ -53,6 +55,11 @@ endif
 ifneq ($(origin only),file)
 ifneq ($(verb)-$(noun),check-code)
 $(error only= selects a check in make check code)
+endif
+endif
+ifneq ($(strip $(channel_profile)),)
+ifneq ($(verb)-$(noun):$(only),check-code:configuration)
+$(error channel_profile= is for make check code only=configuration)
 endif
 endif
 $(verb): _$(verb)-$(noun)
@@ -76,10 +83,12 @@ help:
 	  'make check installer  Verify the assembly and test its bundled runtime on macOS.' \
 	  'make check package    Verify the download files against their checksums.' \
 	  '' \
-	  'check code: only=python|runtime|runtime-system|hardware|source|desktop|configuration|installation-target|installation' \
+	  'check code: only=python|runtime|runtime-channel|runtime-system|hardware|source|desktop|configuration|installation-target|installation' \
 	  'Runtime checks use GUIX as selected; other Guix checks use the release channels.' \
+	  'Runtime-channel: authenticate and replay a signed local test channel.' \
 	  'Runtime-system: exercise native commands in a disposable Linux container.' \
 	  'Runtime: optional boot_reference compares an existing store bundle byte for byte.' \
+	  'Configuration: optional channel_profile checks generated channel imports and replay.' \
 	  'Locations: build_dir, catalogue, assembly, package_dir.' \
 	  'Resources: optional jobs and cores; otherwise use the build tools defaults.' \
 	  'VM: optional vm_memory in MiB for the full installation check.' \

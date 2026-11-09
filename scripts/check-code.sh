@@ -4,7 +4,7 @@
 # Run local checks by default, or a selected Guix check on Linux.
 set -euo pipefail
 case "${1:-python}" in
-    python|runtime|runtime-system|hardware|source|desktop|configuration|installation-target|installation) ;;
+    python|runtime|runtime-channel|runtime-system|hardware|source|desktop|configuration|installation-target|installation) ;;
     *) echo "Unknown code check: $1. Run make help." >&2; exit 1 ;;
 esac
 if test "$#" -gt 2; then echo 'Usage: check-code.sh [check] [source-archive]' >&2; exit 1; fi
@@ -29,6 +29,7 @@ case "${1:-python}" in
             --cache-directory "$build_dir/cache" ${2:+--archive "$2"}
         export ASAHI_SOURCE=$(cd "$temporary/asahi-installer" && pwd -P)
         "$PYTHON" -m unittest discover -s tests -t . -v ;;
+    runtime-channel) bash tests/system/check-runtime.sh --channel ;;
     runtime-system) bash tests/system/check-runtime.sh --system ;;
     runtime|hardware|source)
         bash "tests/system/check-$1.sh" ;;

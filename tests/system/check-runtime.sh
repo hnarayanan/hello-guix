@@ -5,10 +5,11 @@
 source "$(dirname "${BASH_SOURCE[0]}")/../support/common.sh"
 case "${1:-}" in
     "") check_name=runtime-check ;;
+    --channel) check_name=runtime-channel ;;
     --system) check_name=runtime-system ;;
-    *) echo 'Usage: check-runtime.sh [--system]' >&2; exit 1 ;;
+    *) echo 'Usage: check-runtime.sh [--channel|--system]' >&2; exit 1 ;;
 esac
-if test "$#" -gt 1; then echo 'Usage: check-runtime.sh [--system]' >&2; exit 1; fi
+if test "$#" -gt 1; then echo 'Usage: check-runtime.sh [--channel|--system]' >&2; exit 1; fi
 start_recorded_check "$check_name"
 (
     mkdir "$records/home"
@@ -52,6 +53,19 @@ start_recorded_check "$check_name"
     runtime_guix describe -f channels > channels.scm
     printf '%s\n' "${GUIX_DAEMON_SOCKET:-default local socket}" > daemon
     printf 'Guix profile: %s\n' "$runtime"
+    if test "$check_name" = runtime-channel; then
+        printf 'Building the disposable channel authentication tools...\n'
+        runtime_guix build ${build_options[@]+"${build_options[@]}"} \
+            --root="$records/tools" --file="$source/tests/system/channel-tools.scm"
+        env -i HOME="$records/home" PATH="$runtime_path" LC_ALL=C \
+            ${daemon[@]+"${daemon[@]}"} "$records/tools/timeout" \
+            --signal=TERM --kill-after=20 600 "$records/tools/bash" \
+            "$source/tests/system/check-channel-authentication.sh" \
+            "$source" "$records/authentication" "$records/tools" \
+            "$runtime/bin/guix" "${MAX_JOBS:-}" "${CORES:-}"
+        printf '\nAuthenticated local channel checks passed with the recorded inputs.\n'
+        exit
+    fi
     printf 'Building the runtime channel profile with these inputs...\n'
     runtime_guix build ${build_options[@]+"${build_options[@]}"} \
         --root="$records/channel" --file="$source/tests/system/runtime-channel.scm"
@@ -82,6 +96,11 @@ start_recorded_check "$check_name"
     runtime_guix repl "$source/tests/system/boot-build.scm" \
         "${BOOT_REFERENCE:-}" "${MAX_JOBS:-}" "${CORES:-}"
     runtime_guix repl "$source/tests/system/runtime.scm"
+    runtime_guix repl "$source/tests/system/firmware.scm" \
+        "$source/tests/system/firmware-system.scm" "$records/firmware" "${MAX_JOBS:-}" "${CORES:-}"
+    runtime_guix system build --no-grafts --save-provenance --derivation \
+        "$records/firmware/recovery/config.scm" > "$records/firmware/recovered.drv"
+    cmp "$records/firmware/expected.drv" "$records/firmware/recovered.drv"
     runtime_guix repl "$source/tests/system/channel-migration.scm" \
         "$source/tests/system/channel-system.scm" "$records/migration"
     for variant in original added-package; do

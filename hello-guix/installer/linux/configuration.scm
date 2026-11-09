@@ -8,6 +8,7 @@
   #:use-module (ice-9 match)
   #:use-module ((gnu installer user) #:select (user-name))
   #:use-module (gnu system uuid)
+  #:use-module (guix channels)
   #:use-module ((guix read-print) #:select (comment vertical-space))
   #:use-module (hello-guix installer linux target)
   #:use-module (srfi srfi-1)
@@ -86,7 +87,23 @@ welcome page, inside Guix's error handler. Keep the other steps unchanged."
              (type "vfat"))
             %base-file-systems))))
 
-(define (mac-service-fields formatter selections)
+(define (followed-channel-code channels)
+  ;; Keep trust introductions and the caller's URLs/branches. Only future
+  ;; version selection changes; native system provenance records exact inputs.
+  (unless (and (list? channels) (every channel? channels)
+               (= (length channels)
+                  (length (delete-duplicates (map channel-name channels))))
+               (every (lambda (name) (find (lambda (channel)
+                                             (eq? name (channel-name channel)))
+                                           channels))
+                      '(guix asahi hello-guix))
+               (every channel-introduction channels))
+    (error "Expected distinct Guix, Asahi and Hello channels with trust introductions"))
+  `(list ,@(map (lambda (selected)
+                  (channel->code (channel (inherit selected) (commit #f))))
+                channels)))
+
+(define (mac-service-fields formatter selections channels)
   ;; Keep Guix's choices, fonts, and comments. The hardware adapter also
   ;; applies to later system reconfigurations.
   (let* ((fields (formatter selections))
@@ -106,39 +123,50 @@ welcome page, inside Guix's error handler. Keep the other steps unchanged."
                 (cons* ,(comment "\
 ;; Use the Asahi Guix Channel's pre-built packages.\n")
                        (service asahi-substitutes-service-type)
-                       ,(comment
-                         ";; Save configuration sources for each generation.\n")
-                       (service configuration-source-service-type
-                                (configuration-source (current-filename)))
+                       ,@(if channels '()
+                             (list
+                              (comment
+                               ";; Save configuration sources for each generation.\n")
+                              '(service configuration-source-service-type
+                                        (configuration-source (current-filename)))))
                        ,base)
                 ,(comment
                   ";; Use a larger console font for the Mac's screen.\n")
                 (console-font-service-type config => (console-font-terminus config))
                 ,(comment
-                  ";; guix pull uses these channel revisions by default.\n")
+                  (if channels
+                      ";; Follow these channels when running guix pull.\n"
+                      ";; guix pull uses these channel revisions by default.\n"))
                 (guix-service-type
                  config => (guix-configuration
                             (inherit config)
                             (guix (running-guix))
-                            (channels (load (string-append
-                                             (dirname (current-filename))
-                                             "/channels.scm"))))))))
+                            (channels ,(or channels
+                                           '(load (string-append
+                                                   (dirname (current-filename))
+                                                   "/channels.scm")))))))))
             (field field))
           fields))))
 
-(define* (system-configuration steps results #:key root-uuid efi-uuid)
+(define* (system-configuration steps results #:key root-uuid efi-uuid channels)
   "Return Scheme forms for Guix's configuration writer, using STEPS and RESULTS
 from the installer. This function does not run steps, evaluate forms, or access
 devices. The caller must check the target and make sure its UUIDs are unique.
 Use Guix's formatters for desktop and service choices. Guix's installation
-step sets account passwords."
+step sets account passwords.
+
+When CHANNELS is supplied, it must describe the authenticated profile that
+will evaluate the installation, including Hello Guix. Write unpinned future
+pull defaults and import its modules normally. Without it, retain the 0.1
+copied-support contract until the installer runtime includes that channel."
   (for-each
    (lambda (id)
      (let ((answer (result-step results id)))
        (unless (or (not answer) (null? answer))
          (error "The prepared target does not accept this selection" id))))
    '(kernel partition))
-  (let* ((settings
+  (let* ((followed (and channels (followed-channel-code channels)))
+         (settings
           (map (lambda (id)
                  (let ((step (setting-step steps results id)))
                    (if (eq? id 'services)
@@ -148,7 +176,7 @@ step sets account passwords."
                          (lambda (selections)
                            (mac-service-fields
                             (installer-step-configuration-formatter step)
-                            selections))))
+                            selections followed))))
                        step)))
                %settings))
          (fields (hardware-fields (checked-uuid root-uuid 'btrfs)
@@ -162,10 +190,11 @@ step sets account passwords."
                  (result-step results 'user))
       (error "Setup requires an ordinary administrative user"))
     (append
-     `(,(comment
-         ";; Load Hello Guix's hardware support from beside this file.\n")
-       (add-to-load-path (string-append (dirname (current-filename))
-                                        "/hello-guix/modules")))
+     (if followed '()
+         `(,(comment
+             ";; Load Hello Guix's hardware support from beside this file.\n")
+           (add-to-load-path (string-append (dirname (current-filename))
+                                            "/hello-guix/modules"))))
      `((use-modules (gnu bootloader grub)
                     (gnu packages linux)
                     (gnu services base)
@@ -174,7 +203,7 @@ step sets account passwords."
                     (asahi guix services substitutes)
                     (hello-guix system hardware)
                     (hello-guix system runtime)
-                    (hello-guix system configuration-retention)
+                    ,@(if followed '() '((hello-guix system configuration-retention)))
                     ,@(if (any desktop-system-service? (result-step results 'services))
                           '((gnu packages gnome)) '())))
      (append-map
@@ -188,11 +217,12 @@ step sets account passwords."
       (format-configuration (append settings (list hardware))
                             (acons 'mac-hardware #t results))))))
 
-(define (target-system-configuration steps results target)
+(define* (target-system-configuration steps results target #:key channels)
   "Generate configuration forms from TARGET after validation.
 The caller must also check that the target is available for installation."
   (unless (target? target)
     (error "Expected a validated target observation"))
   (system-configuration steps results
                         #:root-uuid (target-root-uuid target)
-                        #:efi-uuid (target-efi-uuid target)))
+                        #:efi-uuid (target-efi-uuid target)
+                        #:channels channels))
