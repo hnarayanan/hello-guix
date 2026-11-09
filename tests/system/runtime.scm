@@ -2,6 +2,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 (use-modules (guix channels)
+             (ice-9 match)
              (srfi srfi-1)
              (guix describe)
              (guix derivations)
@@ -16,10 +17,15 @@
                (string<? (symbol->string (channel-name left))
                          (symbol->string (channel-name right)))))))
 
-(unless (equal? (channel-codes (cadr (command-line)))
-                (channel-codes (caddr (command-line))))
-  (error "Packaged Guix channels differ from the pinned inputs"))
-(display "Packaged channel URLs, branches, commits and introductions match.\n")
+;; Installer checks also require exact agreement with their release inputs.
+;; Runtime checks use the selected profile directly and have no pin comparison.
+(match (cdr (command-line))
+  (() #t)
+  ((expected actual)
+   (unless (equal? (channel-codes expected) (channel-codes actual))
+     (error "Packaged Guix channels differ from the pinned inputs"))
+   (display "Packaged channel URLs, branches, commits and introductions match.\n"))
+  (_ (error "Usage: runtime.scm [expected-channels actual-channels]")))
 
 ;; The installed command must keep the whole channel profile.
 ;; Check that Guix finds its channel records through the package's symbolic link.

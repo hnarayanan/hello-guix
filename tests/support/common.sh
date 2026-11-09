@@ -10,7 +10,7 @@ if test -n "${CORES:-}"; then build_options+=(--cores="$CORES"); fi
 
 test_project=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
-start_check() {
+start_recorded_check() {
     if test "$(uname -s)" != Linux || test "$(id -u)" = 0; then
         echo 'Run this check on Guix as an ordinary user, without sudo.' >&2
         exit 1
@@ -32,6 +32,10 @@ start_check() {
     "${PYTHON:-python3}" "$test_project/scripts/packaging/source_record.py" record --directory "$source"
     cd "$source"
     printf 'Records: %s\n' "$records"
+}
+
+start_check() {
+    start_recorded_check "$1"
     # Authenticate channels once. Use the resulting profile for all test commands.
     pinned_profile=$("$guix_command" time-machine \
         --channels="$source/packaging/guix/channels.scm" ${build_options[@]+"${build_options[@]}"})

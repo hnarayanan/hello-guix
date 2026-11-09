@@ -74,7 +74,8 @@ help:
 	  'make check installer  Verify the assembly and test its bundled runtime on macOS.' \
 	  'make check package    Verify the download files against their checksums.' \
 	  '' \
-	  'check code: only=python|hardware|source|desktop|configuration|installation-target|installation' \
+	  'check code: only=python|runtime|hardware|source|desktop|configuration|installation-target|installation' \
+	  'Runtime checks use GUIX as selected; other Guix checks use the release channels.' \
 	  'Locations: build_dir, catalogue, assembly, package_dir.' \
 	  'Resources: optional jobs and cores; otherwise use the build tools defaults.' \
 	  'VM: optional vm_memory in MiB for the full installation check.' \

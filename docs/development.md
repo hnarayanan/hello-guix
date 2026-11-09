@@ -200,6 +200,44 @@ two build systems, so allow more time and space. Their
 [test script](../tests/system/check-source.sh) accepts `--dry-run` to preview
 the work, and `--desktop` to include both systems.
 
+### Check against another Guix
+
+The checks above use our recorded release channels. To see how the installed
+hardware support works with another Guix, use a channel profile you already
+have. It must include the Asahi modules that Hello Guix imports.
+
+On ARM64 Linux, from the project root, select that profile's Guix command:
+
+```sh
+make check code only=runtime GUIX=/absolute/path/to/the/profile/bin/guix
+```
+
+The source lives in `hello-guix/system/` and `hello-guix/installer/`.
+The channel uses the file links in `packaging/guix/channel/` to compile
+system support independently of the installer. The [packaging notes](../packaging/guix/README.md)
+explain this small build boundary.
+
+Use the development shell for its tools; `GUIX` chooses the definitions being
+tested. This check keeps the selected channel profile for the whole run,
+isolates personal Scheme paths and records the profile and channels alongside
+the source and log in `build/runtime-check-*/`. A configured
+`GUIX_DAEMON_SOCKET` selects the daemon; otherwise Guix uses its local default.
+Missing modules or incompatible definitions are reported by that profile.
+
+It compiles our runtime modules and combines them with the selected Guix and
+Asahi outputs in a separate test profile. The hardware and boot-file checks
+then import Hello Guix from that profile. The profile-retention check also verifies
+that the installed Guix command keeps its complete channel profile.
+
+Channel compilation and the small retention package may need uncached build
+inputs. These checks do not build or activate a complete system. The saved
+working tree has no channel commit: this checks local compilation and imports,
+not authenticated delivery from a published channel.
+
+Repeat with another existing profile to compare inputs. Obtaining newer
+channels is a separate step from this check; it does not run `guix pull` or
+prepare an installer.
+
 ## Build and test the installer
 
 Once the smaller checks pass, we can build the complete installation

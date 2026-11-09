@@ -218,6 +218,175 @@ for argument in args:
     def calls(self):
         return [json.loads(line) for line in (self.root / "calls").read_text().splitlines()]
 
+    def prepare_runtime_profiles(self):
+        """Exercise shell routing locally; these executables do not emulate Guix."""
+        commands = self.root / "commands"
+        commands.mkdir()
+        for name, answer in (("uname", "Linux"), ("id", "1000")):
+            command = commands / name
+            command.write_text("#!/bin/sh\nprintf '%s\\n' " + answer + "\n")
+            command.chmod(0o755)
+        self.runtime_state = self.root / "runtime-state.json"
+        self.runtime_state.write_text("{}")
+        self.profiles = [(self.root / name).resolve()
+                         for name in ("profile one", "profile two")]
+        self.channel_profiles = [(self.root / name).resolve()
+                                 for name in ("compiled one", "compiled two")]
+        compiled = dict(zip(map(str, self.profiles), map(str, self.channel_profiles)))
+        self.current = self.root / "current"
+        program = "#!" + sys.executable + "\n" + f'''
+import json, os, pathlib, sys
+state = json.loads(pathlib.Path({str(self.runtime_state)!r}).read_text())
+# Like Guix's current-profile, retain the profile enclosing the command.
+profile = pathlib.Path(sys.argv[0]).parent.parent.resolve()
+args = sys.argv[1:]
+script = next((pathlib.Path(arg.removeprefix("--file=")).name
+               for arg in args[1:] if arg.endswith(".scm")), args[0])
+compiled = {compiled!r}
+stage = ("channel-profile" if script == "runtime-profile.scm"
+         and str(profile) in compiled.values() else script)
+with pathlib.Path({str(self.root / 'calls')!r}).open("a") as stream:
+    stream.write(json.dumps({{"args": args, "profile": str(profile), "stage": stage,
+                             "environment": dict(os.environ)}}) + "\\n")
+if state.get("fail") == stage:
+    print("fixture failure: " + stage, file=sys.stderr)
+    sys.exit(23)
+if args[0] == "time-machine":
+    print({str(self.profiles[1])!r})
+elif script == "runtime-profile.scm":
+    if state.get("move_current") and stage == "runtime-profile.scm":
+        current = pathlib.Path({str(self.current)!r})
+        current.unlink()
+        current.symlink_to({str(self.profiles[1])!r})
+    invalid = state.get("invalid_profile") == stage
+    print(profile / "missing" if invalid else profile)
+elif args[0] == "describe":
+    print("fixture channels for " + profile.name)
+elif args[0] == "build" and any(a.endswith("/tests/system/runtime-channel.scm") for a in args):
+    root = next(arg.removeprefix("--root=") for arg in args if arg.startswith("--root="))
+    pathlib.Path(root).symlink_to(compiled[str(profile)])
+    print("fixture passed: runtime channel compilation")
+elif script in ("hardware.scm", "boot.scm", "runtime.scm"):
+    print("fixture passed: " + stage)
+else:
+    sys.exit("Unexpected Guix operation: " + repr(args))
+'''
+        for profile in self.profiles + self.channel_profiles:
+            (profile / "bin").mkdir(parents=True)
+            command = self.root / "packages" / profile.name / "bin/guix"
+            command.parent.mkdir(parents=True)
+            command.write_text(program)
+            command.chmod(0o755)
+            (profile / "bin/guix").symlink_to(command)
+        self.current.symlink_to(self.profiles[0])
+        self.environment = {
+            "PATH": str(commands) + os.pathsep + os.environ["PATH"],
+            "GUIX": str(self.current / "bin/guix"), "PYTHON": sys.executable,
+        }
+
+    def test_runtime_checks_use_and_record_the_selected_profile(self):
+        self.prepare_runtime_profiles()
+        for index, profile in enumerate(self.profiles):
+            with self.subTest(profile=profile.name):
+                before = len(self.calls()) if (self.root / "calls").exists() else 0
+                self.environment["GUIX"] = str(profile / "bin/guix")
+                result = self.make("check", "code", "only=runtime",
+                                   f"build_dir=build/runtime {index}")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                records, = (self.project / f"build/runtime {index}").glob("runtime-check-*")
+                self.assertEqual((records / "profile").read_text().strip(), str(profile))
+                self.assertEqual((records / "channels.scm").read_text().strip(),
+                                 "fixture channels for " + profile.name)
+                channel_profile = self.channel_profiles[index]
+                self.assertEqual((records / "channel").resolve(), channel_profile)
+                self.assertEqual((records / "channel-profile").read_text().strip(),
+                                 str(channel_profile))
+                self.assertEqual((records / "channel-channels.scm").read_text().strip(),
+                                 "fixture channels for " + channel_profile.name)
+                self.assertTrue((records / "source/SHA256SUMS").is_file())
+                calls = self.calls()[before:]
+                build = next(i for i, call in enumerate(calls) if call["args"][0] == "build")
+                self.assertTrue(all(call["profile"] == str(profile) for call in calls[:build + 1]))
+                self.assertTrue(all(call["profile"] == str(channel_profile) for call in calls[build + 1:]))
+                self.assertFalse(any("-L" in call["args"] for call in calls[build + 1:]))
+                self.assertIn("fixture passed: runtime.scm", (records / "check.log").read_text())
+        calls = self.calls()
+        self.assertEqual({call["profile"] for call in calls},
+                         set(map(str, self.profiles + self.channel_profiles)))
+        self.assertTrue(all(call["args"][0] in ("repl", "describe", "build") for call in calls))
+        self.assertFalse(any("installer" in argument or "setup-tools" in argument
+                             for call in calls for argument in call["args"]))
+
+    def test_runtime_checks_freeze_the_profile_and_clear_personal_settings(self):
+        self.prepare_runtime_profiles()
+        self.runtime_state.write_text(json.dumps({"move_current": True}))
+        pollution = {name: "/personal/override" for name in (
+            "GUILE_LOAD_PATH", "GUILE_LOAD_COMPILED_PATH", "GUIX_PACKAGE_PATH",
+            "GUIX_EXTENSIONS_PATH", "GUIX_UNINSTALLED", "GUIX_PROFILE",
+            "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "BOOT_TEST_DIRECTORY")}
+        self.environment.update(pollution, HOME="/personal/home",
+                                GUIX_DAEMON_SOCKET="/chosen/daemon/socket")
+        result = self.make("check", "code", "only=runtime")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(self.current.resolve(), self.profiles[1])
+        calls = self.calls()
+        build = next(i for i, call in enumerate(calls) if call["args"][0] == "build")
+        self.assertTrue(all(call["profile"] == str(self.profiles[0]) for call in calls[:build + 1]))
+        self.assertTrue(all(call["profile"] == str(self.channel_profiles[0]) for call in calls[build + 1:]))
+        records, = (self.project / "build").glob("runtime-check-*")
+        for call in calls:
+            environment = call["environment"]
+            self.assertFalse(set(pollution).intersection(environment))
+            self.assertEqual(environment["HOME"], str((records / "home").resolve()))
+            self.assertEqual(environment["LC_ALL"], "C")
+            self.assertEqual(environment["GUIX_DAEMON_SOCKET"], "/chosen/daemon/socket")
+        for call in calls[1:]:
+            if call["stage"] != "channel-profile":
+                self.assertEqual(call["environment"]["PATH"],
+                                 str(Path(call["profile"]) / "bin"))
+
+    def test_runtime_check_failures_keep_the_status_and_records(self):
+        self.prepare_runtime_profiles()
+        stages = ("runtime-profile.scm", "runtime-channel.scm", "channel-profile",
+                  "hardware.scm", "boot.scm", "runtime.scm")
+        for index, stage in enumerate(stages):
+            with self.subTest(stage=stage):
+                self.runtime_state.write_text(json.dumps({"fail": stage}))
+                (self.root / "calls").unlink(missing_ok=True)
+                result = self.make("check", "code", "only=runtime",
+                                   f"build_dir=build/failure-{index}")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Error 23", result.stdout)
+                records, = (self.project / f"build/failure-{index}").glob("runtime-check-*")
+                self.assertTrue((records / "source/SHA256SUMS").is_file())
+                self.assertIn("fixture failure: " + stage, (records / "check.log").read_text())
+                self.assertEqual(self.calls()[-1]["stage"], stage)
+
+    def test_runtime_check_rejects_an_unusable_profile(self):
+        self.prepare_runtime_profiles()
+        for index, stage in enumerate(("runtime-profile.scm", "channel-profile")):
+            with self.subTest(stage=stage):
+                self.runtime_state.write_text(json.dumps({"invalid_profile": stage}))
+                (self.root / "calls").unlink(missing_ok=True)
+                result = self.make("check", "code", "only=runtime",
+                                   f"build_dir=build/invalid-{index}")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertEqual(self.calls()[-1]["stage"], stage)
+                records, = (self.project / f"build/invalid-{index}").glob("runtime-check-*")
+                self.assertTrue((records / "source/SHA256SUMS").is_file())
+                self.assertTrue((records / "check.log").is_file())
+
+    def test_existing_hardware_check_keeps_its_release_evaluator(self):
+        self.prepare_runtime_profiles()
+        result = self.make("check", "code", "only=hardware")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        calls = self.calls()
+        self.assertEqual(calls[0]["args"][0], "time-machine")
+        self.assertEqual(calls[0]["profile"], str(self.profiles[0]))
+        self.assertTrue(all(call["profile"] == str(self.profiles[1]) for call in calls[1:]))
+        self.assertTrue(any(argument.endswith("/packaging/guix/channels.scm")
+                            for argument in calls[0]["args"]))
+
     def test_image_builds_keep_old_sources_when_development_continues(self):
         self.prepare_fake_guix()
         recipe = "packaging/guix/recipes/setup-install.scm"
