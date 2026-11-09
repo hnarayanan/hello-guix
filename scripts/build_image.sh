@@ -67,7 +67,7 @@ trap 'rm -rf "$attempt"' EXIT
 installer_source="$build_dir/installer-source"
 "$guix_command" repl scripts/build-result.scm "$attempt/source" "$installer_source"
 
-"$profile/bin/guix" build -L "$installer_source" -L src \
+"$profile/bin/guix" build -L "$installer_source" -L packaging/guix/installer -L packaging/guix/channel \
     --system=aarch64-linux ${build_options[@]+"${build_options[@]}"} --root="$attempt/result" \
     --file=packaging/guix/packages/setup-install.scm
 "$python_command" scripts/asahi_payload.py check --package "$attempt/result"

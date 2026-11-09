@@ -28,7 +28,7 @@ from build_inputs import (PROJECT, checksum_text, file_hashes, record_snapshot,
                           sha256, source_files)
 from prepare_asahi import apply_adaptations, unpack_source
 
-sys.path.insert(0, str(PROJECT / "src/hello-guix/installer/macos"))
+sys.path.insert(0, str(PROJECT / "hello-guix/installer/macos"))
 from bundle import check_bundle, inventory
 
 
@@ -247,7 +247,7 @@ def assemble(catalogue, output, runtime_archive=None, source_archive=None,
         image_source = "."
         if project_digest != payload["source_checksums_sha256"]:
             image_source = "image-source"
-            shutil.copytree(catalogue / "source-record", source_record / image_source)
+            shutil.copytree(catalogue / "source-record", source_record / image_source, symlinks=True)
             verify_checksums(source_record / image_source)
             require(sha256(source_record / image_source / "SHA256SUMS")
                     == payload["source_checksums_sha256"], "Image source changed while copying")
@@ -265,7 +265,7 @@ def assemble(catalogue, output, runtime_archive=None, source_archive=None,
         shutil.copytree(source_record / "LICENSES", bundle / "LICENSES")
         shutil.copyfile(source_record / "NOTICE", bundle / "NOTICE")
         copy_guides(source_record, bundle, image_source)
-        launcher = source_record / "src/hello-guix/installer/macos"
+        launcher = source_record / "hello-guix/installer/macos"
         shutil.copyfile(launcher / "launch.sh", bundle / "install.sh")
         (bundle / "install.sh").chmod(0o755)
         (bundle / "libexec").mkdir()
@@ -295,7 +295,7 @@ def assemble(catalogue, output, runtime_archive=None, source_archive=None,
 
 
 def write_archive(directory, destination, name):
-    """Preserve ordinary files and framework links without host metadata."""
+    """Preserve ordinary files and relative links without host metadata."""
     def normalise(member):
         member.uid = member.gid = member.mtime = 0
         member.uname = member.gname = ""
@@ -358,7 +358,7 @@ def build_package(assembly, output, version, base_url):
         write_archive(bundle, archive, "hello-guix")
         write_archive(source, directory / f"hello-guix-{version}-src.tar.gz",
                       f"hello-guix-{version}-src")
-        template = (source / "src/hello-guix/installer/macos/bootstrap.sh").read_text()
+        template = (source / "hello-guix/installer/macos/bootstrap.sh").read_text()
         bootstrap = template.replace("@ARCHIVE_URL@", shlex.quote(base_url.rstrip("/") + "/" + archive.name))
         bootstrap = bootstrap.replace("@ARCHIVE_SHA256@", shlex.quote(sha256(archive)))
         bootstrap = bootstrap.replace("@MINIMUM_MACOS@", str(minimum_macos))

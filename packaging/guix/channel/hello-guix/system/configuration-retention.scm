@@ -1,0 +1,1 @@
+../../../../../hello-guix/system/configuration-retention.scm

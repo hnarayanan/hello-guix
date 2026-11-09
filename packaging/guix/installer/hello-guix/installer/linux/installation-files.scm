@@ -1,0 +1,1 @@
+../../../../../../hello-guix/installer/linux/installation-files.scm

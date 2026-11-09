@@ -7,7 +7,7 @@ start_check hardware-check
 (
     pinned_guix describe -f channels > "$records/channels.scm"
     cd "$records"
-    pinned_guix repl -L "$source/src" "$source/tests/hardware.scm"
-    pinned_guix repl -L "$source/src" "$source/tests/boot.scm"
+    pinned_guix repl -L "$source/packaging/guix/channel" "$source/tests/hardware.scm"
+    pinned_guix repl -L "$source/packaging/guix/channel" "$source/tests/boot.scm"
     printf '\nHardware adapter checks passed. No system was activated.\n'
 ) 2>&1 | tee "$records/check.log"

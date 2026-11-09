@@ -17,8 +17,8 @@ import tempfile
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-SOURCE_FILES = (".gitignore", "COPYING", "Makefile", "NOTICE", "README.md")
-SOURCE_DIRECTORIES = ("LICENSES", "docs", "packaging", "patches", "scripts", "src", "tests")
+SOURCE_FILES = (".gitignore", ".guix-channel", "COPYING", "Makefile", "NOTICE", "README.md")
+SOURCE_DIRECTORIES = ("LICENSES", "docs", "hello-guix", "packaging", "patches", "scripts", "tests")
 EXCLUDED_ENTRIES = (
     ".git", "build",
     # The checksum inventory and original image source in released source trees.
@@ -32,13 +32,37 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def valid_source_entry(path, directory):
+    """Keep module views as canonical links and other source as ordinary files."""
+    name = path.relative_to(directory)
+    # An assembly can retain the source of an earlier image beside its own.
+    if len(name.parts) > 1 and name.parts[0] in ("image-source", "source-record"):
+        return valid_source_entry(path, directory / name.parts[0])
+    roots = {
+        ("packaging", "guix", "channel"): ("hello-guix/system/", "hello-guix/apple-silicon.scm"),
+        ("packaging", "guix", "installer"): ("hello-guix/installer/linux/",),
+    }
+    allowed = roots.get(name.parts[:3], ())
+    relative = Path(*name.parts[3:])
+    if path.suffix != ".scm" or not any(
+            relative.as_posix().startswith(prefix) if prefix.endswith("/")
+            else relative.as_posix() == prefix for prefix in allowed):
+        return not path.is_symlink()
+    if not path.is_symlink():
+        return False
+    target = directory / relative
+    return (target.is_file() and target.resolve() == directory.resolve() / relative
+            and os.readlink(path) == os.path.relpath(target, path.parent))
+
+
 def file_hashes(directory):
-    """Calculate file checksums. Reject symbolic links and special files."""
+    """Calculate file checksums, allowing the declared source module links."""
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError(f"Expected an ordinary directory: {directory}")
     result = {}
     for path in sorted(directory.rglob("*")):
-        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+        if (not valid_source_entry(path, directory)
+                or not (path.is_file() or path.is_dir())):
             raise ValueError(f"Unexpected link or special file: {path}")
         if path.is_file():
             result[path.relative_to(directory).as_posix()] = sha256(path)
@@ -75,7 +99,8 @@ def source_files(project, *, outputs=()):
                                any(output.is_relative_to(path) for output in excluded)):
             raise ValueError(f"Unclassified project path: {path.relative_to(project)}. "
                              "Declare it as source or a build output, or exclude it explicitly.")
-        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+        if (not valid_source_entry(path, project)
+                or not (path.is_file() or path.is_dir())):
             raise ValueError(f"Unexpected link or special file: {path}")
         if path.is_dir():
             for child in path.iterdir():
@@ -120,7 +145,7 @@ def record_snapshot(directory, project=PROJECT, *, outputs=()):
         for name in files:
             target = snapshot / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(project / name, target)
+            shutil.copyfile(project / name, target, follow_symlinks=False)
         (snapshot / "SHA256SUMS").write_text(checksum_text(file_hashes(snapshot)))
         verify_snapshot(snapshot, project, outputs=(*outputs, directory, Path(temporary)))
         snapshot.rename(directory)

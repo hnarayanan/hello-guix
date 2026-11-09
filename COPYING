@@ -13,7 +13,7 @@ The following separable Asahi installer contributions are available under MIT:
   patches/asahi-macos-installer/patches/0001-initialize-guix-boot-choice.patch
   patches/asahi-macos-installer/overlay/guix_boot.py
   tests/test_boot.py
-  src/hello-guix/installer/macos/bootstrap.sh
+  hello-guix/installer/macos/bootstrap.sh
 
 Its licence text is in LICENSES/MIT.txt. The surrounding Hello Guix build
 and launch tools remain GPL-3.0-or-later. Our changes to GNU Guix and the

@@ -1,8 +1,6 @@
 ;; SPDX-FileCopyrightText: 2026 Harish Narayanan
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-(add-to-load-path (string-append (dirname (current-filename)) "/../src"))
-
 (use-modules (guix channels)
              (srfi srfi-1)
              (guix describe)

@@ -15,7 +15,7 @@ start_check "$fixture"
 (
 if test "$fixture" = installation; then
     installer_source
-    pinned_guix build -L "$records/installer-source" -L src ${build_options[@]+"${build_options[@]}"} \
+    pinned_guix build -L "$records/installer-source" -L packaging/guix/installer -L packaging/guix/channel ${build_options[@]+"${build_options[@]}"} \
         --root="$records/fixture" --file=tests/guix/installation-vm.scm
     "$records/fixture/python" tests/run-installation-vm.py "$records/fixture" \
         --qemu "$records/fixture/qemu" --fdtput "$records/fixture/fdtput" \
@@ -23,7 +23,7 @@ if test "$fixture" = installation; then
         ${VM_MEMORY:+--memory "$VM_MEMORY"}
     exit
 fi
-pinned_guix build -L src ${build_options[@]+"${build_options[@]}"} \
+pinned_guix build -L packaging/guix/installer -L packaging/guix/channel ${build_options[@]+"${build_options[@]}"} \
     --root="$records/tools" --file="tests/guix/$fixture.scm"
 truncate -s "$size" "$records/disk.img"
 # The guest needs no terminal input, which can suspend QEMU under timeout.

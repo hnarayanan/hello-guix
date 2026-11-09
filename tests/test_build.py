@@ -28,7 +28,7 @@ class BuildTests(unittest.TestCase):
         for name in source_files(PROJECT):
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(PROJECT / name, target)
+            shutil.copyfile(PROJECT / name, target, follow_symlinks=False)
         self.inputs = self.project / "build/source-record"
 
     def test_record_is_repeatable_and_keeps_exact_sources(self):
@@ -37,7 +37,7 @@ class BuildTests(unittest.TestCase):
         record_snapshot(self.inputs, self.project)
         verify_snapshot(self.inputs, self.project)
         self.assertEqual((self.inputs / "SHA256SUMS").stat().st_mtime_ns, before)
-        for name in ("packaging/guix/channels.scm", "COPYING",
+        for name in (".guix-channel", "packaging/guix/channels.scm", "COPYING",
                      "LICENSES/GPL-3.0-or-later.txt", "LICENSES/MIT.txt",
                      "packaging/macos/asahi-installer-source.json.license",
                      "packaging/macos/asahi-installer-runtime.json.license",
@@ -72,7 +72,7 @@ class BuildTests(unittest.TestCase):
             verify_snapshot(self.inputs, self.project)
 
     def test_whole_directories_include_new_file_types_and_subdirectories(self):
-        names = ("src/hello-guix/data/device.json", "docs/figures/boot.svg",
+        names = ("hello-guix/data/device.json", "docs/figures/boot.svg",
                  "scripts/helpers/tool", "tests/fixtures/result.txt")
         for name in names:
             path = self.project / name
@@ -97,24 +97,24 @@ class BuildTests(unittest.TestCase):
 
     def test_metadata_build_outputs_and_caches_stay_out(self):
         for name in (".git/config", "build/log",
-                     ".DS_Store", "src/hello-guix/.DS_Store",
+                     ".DS_Store", "hello-guix/.DS_Store",
                      "scripts/__pycache__/build_inputs.cpython.pyc"):
             path = self.project / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("not source")
         record_snapshot(self.inputs, self.project)
         self.assertEqual({p.name for p in self.inputs.iterdir()}, {
-            ".gitignore", "COPYING", "Makefile", "NOTICE", "README.md", "SHA256SUMS",
-            "LICENSES", "docs", "packaging", "patches", "scripts", "src", "tests",
+            ".gitignore", ".guix-channel", "COPYING", "Makefile", "NOTICE", "README.md", "SHA256SUMS",
+            "LICENSES", "docs", "hello-guix", "packaging", "patches", "scripts", "tests",
         })
         self.assertFalse((self.inputs / "scripts/__pycache__").exists())
-        self.assertFalse((self.inputs / "src/hello-guix/.DS_Store").exists())
+        self.assertFalse((self.inputs / "hello-guix/.DS_Store").exists())
         copied = self.root / "copied-source"
         self.assertEqual(record_snapshot(copied, self.inputs),
                          verify_snapshot(self.inputs, self.project))
 
     def test_source_links_and_special_files_are_rejected(self):
-        path = self.project / "src/device"
+        path = self.project / "hello-guix/device"
         for kind in ("file link", "directory link", "pipe"):
             with self.subTest(kind=kind):
                 if kind == "pipe":
@@ -136,19 +136,23 @@ class BuildTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unclassified project path:.*settings.json"):
                 verify_snapshot(self.inputs, self.project)
             neighbour.unlink()
-        for directory in (".", "src", "src/hello-guix"):
+        for directory in (".", "hello-guix", "hello-guix/installer", "hello-guix/system"):
             with self.subTest(directory=directory), patch.dict(os.environ, BUILD_DIR=directory):
                 with self.assertRaisesRegex(ValueError, "overlaps project source"):
                     source_files(self.project)
 
     def test_snapshot_tracks_nested_modules(self):
-        name = Path("src/hello-guix/installer/linux/setup.scm")
+        names = (Path("hello-guix/installer/linux/setup.scm"),
+                 Path("hello-guix/system/hardware.scm"))
         record_snapshot(self.inputs, self.project)
-        self.assertEqual((self.inputs / name).read_bytes(),
-                         (self.project / name).read_bytes())
-        (self.project / name).write_text("changed module")
-        with self.assertRaisesRegex(ValueError, "Build inputs changed"):
-            verify_snapshot(self.inputs, self.project)
+        for name in names:
+            with self.subTest(name=name):
+                original = (self.project / name).read_bytes()
+                self.assertEqual((self.inputs / name).read_bytes(), original)
+                (self.project / name).write_text("changed module")
+                with self.assertRaisesRegex(ValueError, "Build inputs changed"):
+                    verify_snapshot(self.inputs, self.project)
+                (self.project / name).write_bytes(original)
 
     def test_snapshot_tracks_guix_test_runners_and_recipes(self):
         names = (Path("tests/guix/check-vm.sh"), Path("tests/guix/configuration-check.scm"))
@@ -248,7 +252,7 @@ for argument in args:
         self.assertEqual((self.project / "build/payload").readlink(), previous)
         self.environment.pop("FAIL_BUILD")
         invalid = self.root / "invalid-package"
-        shutil.copytree(previous, invalid)
+        shutil.copytree(previous, invalid, symlinks=True)
         (invalid / fixtures.PACKAGE_DIRECTORY / "guix-setup.zip").unlink()
         self.environment["PACKAGE"] = str(invalid)
         result = self.make("build", "image")
@@ -294,17 +298,18 @@ for argument in args:
                   if "--file=packaging/guix/packages/setup-install.scm" in c["args"]]
         for arguments in builds:
             paths = [arguments[i + 1] for i, arg in enumerate(arguments) if arg == "-L"]
-            self.assertEqual(len(paths), 2)
-            self.assertEqual(paths[1], "src")
+            self.assertEqual(len(paths), 3)
+            self.assertEqual(paths[1:], ["packaging/guix/installer", "packaging/guix/channel"])
             self.assertTrue(Path(paths[0]).is_absolute())
             self.assertIn(Path(paths[0]).name, ("source", "installer-source"))
-        for path in (self.project / "src").rglob("*.scm"):
-            source = "\n".join(line for line in path.read_text().splitlines()
-                               if not line.lstrip().startswith(";"))
-            declaration = re.match(r"\s*\(define-module\s+\(([^()]*)\)", source)
-            self.assertIsNotNone(declaration, f"Standalone file on module path: {path}")
-            self.assertEqual(tuple(declaration.group(1).split()),
-                             path.relative_to(self.project / "src").with_suffix("").parts)
+        for root in (self.project / "packaging/guix/installer", self.project / "packaging/guix/channel"):
+            for path in root.rglob("*.scm"):
+                source = "\n".join(line for line in path.read_text().splitlines()
+                                   if not line.lstrip().startswith(";"))
+                declaration = re.match(r"\s*\(define-module\s+\(([^()]*)\)", source)
+                self.assertIsNotNone(declaration, f"Standalone file on module path: {path}")
+                self.assertEqual(tuple(declaration.group(1).split()),
+                                 path.relative_to(root).with_suffix("").parts)
 
     def test_grammar_rejects_incomplete_or_ambiguous_commands_before_work(self):
         self.prepare_fake_guix()

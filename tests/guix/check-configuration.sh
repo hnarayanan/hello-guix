@@ -7,7 +7,7 @@ start_check configuration-check
 (
 pinned_guix describe -f channels > "$records/channels.scm"
 installer_source
-pinned_guix build -L "$records/installer-source" -L src ${build_options[@]+"${build_options[@]}"} \
+pinned_guix build -L "$records/installer-source" -L packaging/guix/installer -L packaging/guix/channel ${build_options[@]+"${build_options[@]}"} \
     --root="$records/check-program" --file=tests/guix/configuration-check.scm
 "$PYTHON" "$test_project/scripts/build_inputs.py" verify --directory "$source"
 

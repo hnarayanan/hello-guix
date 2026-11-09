@@ -47,7 +47,7 @@ class MacOSBundleTests(unittest.TestCase):
         for name in source_files(PROJECT):
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(PROJECT / name, target)
+            shutil.copyfile(PROJECT / name, target, follow_symlinks=False)
 
         self.source_tar = self.root / "source.tar.gz"
         self.runtime_tar = self.root / "runtime.tar.gz"
@@ -176,6 +176,13 @@ class MacOSBundleTests(unittest.TestCase):
             archive.extractall(extracted, filter="data")
         source = extracted / "hello-guix-0.1-src"
         self.assertEqual(file_hashes(source / "image-source"), file_hashes(self.inputs))
+        links = [path.relative_to(self.inputs) for path in self.inputs.rglob("*")
+                 if path.is_symlink()]
+        self.assertTrue(links)
+        for name in links:
+            copied = source / "image-source" / name
+            self.assertTrue(copied.is_symlink(), name)
+            self.assertEqual(os.readlink(copied), os.readlink(self.inputs / name))
         self.assertFalse((source / "upstream").exists())
         self.assertFalse((source / "build.json").exists())
         self.assertFalse((source / ".git").exists())
@@ -459,7 +466,7 @@ class MacOSBundleTests(unittest.TestCase):
 
     def test_make_builds_and_checks_package_from_existing_assembly(self):
         # The fixture runtime cannot run; exercise Make with a controlled launcher.
-        launcher = self.project / "src/hello-guix/installer/macos/launch.sh"
+        launcher = self.project / "hello-guix/installer/macos/launch.sh"
         launcher.write_text('#!/bin/sh\nset -eu\n'
                             'test "$#" -eq 1\n'
                             'test "$1" = check\n'
@@ -634,7 +641,7 @@ class MacOSBundleTests(unittest.TestCase):
             tool = tools / name
             tool.write_text("#!/bin/sh\nset -eu\n" + body + "\n")
             tool.chmod(0o700)
-        template = (PROJECT / "src/hello-guix/installer/macos/bootstrap.sh").read_text()
+        template = (PROJECT / "hello-guix/installer/macos/bootstrap.sh").read_text()
         template = template.replace("export PATH=/usr/bin:/bin:/usr/sbin:/sbin",
                                     "export PATH=" + shlex.quote(str(tools) + ":" + os.environ["PATH"]))
         script = self.root / "bootstrap.sh"
@@ -723,7 +730,7 @@ class MacOSBundleTests(unittest.TestCase):
                      "import subprocess; subprocess.run(['/usr/bin/true'])"):
             with self.subTest(code=code):
                 main.write_text(code)
-                result = subprocess.run([sys.executable, "-B", str(PROJECT / "src/hello-guix/installer/macos/runtime_check.py"),
+                result = subprocess.run([sys.executable, "-B", str(PROJECT / "hello-guix/installer/macos/runtime_check.py"),
                                          str(bundle)], capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("forbidden", result.stderr)

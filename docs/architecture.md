@@ -236,11 +236,12 @@ you and begin exploring.
 
 ```text
 hello-guix/
-├── src/hello-guix/
-│   ├── installer/
-│   │   ├── macos/             # Download, check and launch Asahi preparation
-│   │   └── linux/             # Run the Guix installation flow
-│   └── system/                # Hardware, audio, boot bundles and saved source
+├── hello-guix/
+│   ├── system/                # Hardware, audio, boot bundles and saved source
+│   └── installer/
+│       ├── macos/             # Download, check and launch Asahi preparation
+│       └── linux/             # Run the Guix installation flow
+├── .guix-channel              # Runtime module root and channel dependencies
 ├── packaging/
 │   ├── guix/                  # Channels, packages, setup system and images
 │   └── macos/                 # Runtime sources and upstream notices
@@ -252,6 +253,12 @@ hello-guix/
 ├── NOTICE                     # Installer licences and sources
 └── build/                     # Generated files, outside version control
 ```
+
+Source paths follow Scheme module names: `hello-guix/system/hardware.scm`
+defines `(hello-guix system hardware)`. Small directories of file links
+under `packaging/guix/` expose just the modules each build needs. The
+channel selects system support; image builds also use the installer
+modules. See the [packaging notes](../packaging/guix/README.md).
 
 A good first stop is `with-asahi-hardware` in [hardware.scm][hardware].
 It shows how the Mac’s hardware support becomes part of a Guix system.
@@ -285,20 +292,20 @@ building and testing the project.
 [u-boot]: https://docs.u-boot.org/en/latest/board/apple/m1.html
 [uefi]: https://en.wikipedia.org/wiki/UEFI
 [tested]: installation.md#what-has-been-tested
-[bootstrap]: ../src/hello-guix/installer/macos/bootstrap.sh
-[launch]: ../src/hello-guix/installer/macos/launch.sh
-[setup]: ../src/hello-guix/installer/linux/setup.scm
-[ram-boot]: ../src/hello-guix/installer/linux/ram-boot.scm
+[bootstrap]: ../hello-guix/installer/macos/bootstrap.sh
+[launch]: ../hello-guix/installer/macos/launch.sh
+[setup]: ../hello-guix/installer/linux/setup.scm
+[ram-boot]: ../hello-guix/installer/linux/ram-boot.scm
 [installer-ui]: ../packaging/guix/systems/installer-ui.scm
-[configuration]: ../src/hello-guix/installer/linux/configuration.scm
-[target]: ../src/hello-guix/installer/linux/target.scm
-[install]: ../src/hello-guix/installer/linux/install.scm
-[installation-files]: ../src/hello-guix/installer/linux/installation-files.scm
-[hardware]: ../src/hello-guix/system/hardware.scm
-[audio]: ../src/hello-guix/system/audio.scm
-[boot]: ../src/hello-guix/system/boot.scm
-[boot-files]: ../src/hello-guix/system/boot-files.scm
-[configuration-retention]: ../src/hello-guix/system/configuration-retention.scm
+[configuration]: ../hello-guix/installer/linux/configuration.scm
+[target]: ../hello-guix/installer/linux/target.scm
+[install]: ../hello-guix/installer/linux/install.scm
+[installation-files]: ../hello-guix/installer/linux/installation-files.scm
+[hardware]: ../hello-guix/system/hardware.scm
+[audio]: ../hello-guix/system/audio.scm
+[boot]: ../hello-guix/system/boot.scm
+[boot-files]: ../hello-guix/system/boot-files.scm
+[configuration-retention]: ../hello-guix/system/configuration-retention.scm
 [guix-patches]: ../patches/gnu-guix-installer/README.md
 [asahi-patches]: ../patches/asahi-macos-installer/README.md
 [image-patches]: ../patches/asahi-guix-image-builder/README.md

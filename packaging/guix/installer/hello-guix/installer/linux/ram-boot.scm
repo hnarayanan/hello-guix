@@ -1,0 +1,1 @@
+../../../../../../hello-guix/installer/linux/ram-boot.scm

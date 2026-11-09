@@ -16,7 +16,7 @@ start_check source-check
 (
 build_runtime
 clean_guix describe -f channels > "$records/channels.scm"
-clean_guix repl tests/runtime.scm packaging/guix/channels.scm "$records/channels.scm"
+clean_guix repl -L "$source/packaging/guix/channel" tests/runtime.scm packaging/guix/channels.scm "$records/channels.scm"
 
 variants=(console)
 grafts=(--no-grafts)
@@ -31,7 +31,7 @@ for variant in "${variants[@]}"; do
     cp "$source/packaging/guix/channels.scm" "$bundle/channels.scm"
     cp "$source/COPYING" "$bundle/hello-guix/COPYING"
     cp -R "$source/LICENSES" "$bundle/hello-guix/LICENSES"
-    cp "$source/src/hello-guix/system/"*.scm "$bundle/hello-guix/modules/hello-guix/system/"
+    cp "$source/hello-guix/system/"*.scm "$bundle/hello-guix/modules/hello-guix/system/"
     case "$variant" in
         console) services='(cons (service network-manager-service-type) %base-services)' ;;
         gnome) services='(cons (service gnome-desktop-service-type) %desktop-services)' ;;
@@ -68,7 +68,7 @@ for variant in "${variants[@]}"; do
     test ! -e "$saved/DO-NOT-COPY"
     rm "$bundle/DO-NOT-COPY"
     diff -r "$bundle" "$saved"
-    clean_guix repl "$source/tests/runtime.scm" "$saved/channels.scm" system/channels.scm
+    clean_guix repl -L "$source/packaging/guix/channel" "$source/tests/runtime.scm" "$saved/channels.scm" system/channels.scm
 
     cp -R -L "$saved" recovered
     chmod -R u+w recovered

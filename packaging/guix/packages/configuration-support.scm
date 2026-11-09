@@ -7,6 +7,6 @@
 ;; Keep the installer code in the temporary setup system.
 (file-union "hello-guix-configuration-support"
             `(("modules/hello-guix/system"
-               ,(local-file "../../../src/hello-guix/system" #:recursive? #t))
+               ,(local-file "../../../hello-guix/system" #:recursive? #t))
               ("COPYING" ,(local-file "../../../COPYING"))
               ("LICENSES" ,(local-file "../../../LICENSES" #:recursive? #t))))

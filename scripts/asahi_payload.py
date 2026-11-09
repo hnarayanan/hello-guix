@@ -266,7 +266,7 @@ def stage(package_directory, output, inputs, project=PROJECT):
         (publication / "os").mkdir(parents=True)
         copied = publication / "os" / archive_path.name
         shutil.copyfile(archive_path, copied)
-        shutil.copytree(inputs, publication / "source-record")
+        shutil.copytree(inputs, publication / "source-record", symlinks=True)
         for name, content in documents.items():
             (publication / name).write_bytes(content)
         require(file_hashes(publication) == expected, "Files changed while staging")
