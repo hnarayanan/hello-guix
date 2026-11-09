@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 
 
-PROJECT = Path(__file__).resolve().parents[1]
+PROJECT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location(
     "asahi_prepare", PROJECT / "scripts/packaging/asahi_source.py")
 prepare = importlib.util.module_from_spec(spec)

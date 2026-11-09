@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/packaging"))
 from source_record import PROJECT, file_hashes, record_snapshot, source_files, verify_snapshot
 from macos_bundle import verify_checksums, write_archive
 

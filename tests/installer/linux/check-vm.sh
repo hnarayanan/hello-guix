@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Harish Narayanan
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Pass only a newly created disk-image file to QEMU, never a host device.
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../../support/common.sh"
 case "${1:-}" in
     installation-target)
         size=20G; seconds=600; marker=HELLO-GUIX-TARGET
@@ -16,15 +16,15 @@ start_check "$fixture"
 if test "$fixture" = installation; then
     installer_source
     pinned_guix build -L "$records/installer-source" -L packaging/guix/installer -L packaging/guix/channel ${build_options[@]+"${build_options[@]}"} \
-        --root="$records/fixture" --file=tests/guix/installation-vm.scm
-    "$records/fixture/python" tests/run-installation-vm.py "$records/fixture" \
+        --root="$records/fixture" --file=tests/installer/linux/installation-vm.scm
+    "$records/fixture/python" tests/installer/linux/run-installation-vm.py "$records/fixture" \
         --qemu "$records/fixture/qemu" --fdtput "$records/fixture/fdtput" \
         --firmware "$records/fixture/firmware" --output="$records" \
         ${VM_MEMORY:+--memory "$VM_MEMORY"}
     exit
 fi
 pinned_guix build -L packaging/guix/installer -L packaging/guix/channel ${build_options[@]+"${build_options[@]}"} \
-    --root="$records/tools" --file="tests/guix/$fixture.scm"
+    --root="$records/tools" --file="tests/installer/linux/$fixture.scm"
 truncate -s "$size" "$records/disk.img"
 # The guest needs no terminal input, which can suspend QEMU under timeout.
 "$records/tools/timeout" "$seconds" "$records/tools/qemu" \

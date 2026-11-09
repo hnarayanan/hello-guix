@@ -254,7 +254,13 @@ hello-guix/
 │   ├── environment.scm        # Development tools
 │   ├── check-code.sh          # Common test entry point
 │   └── packaging/             # Source preparation, builds and verification
-├── tests/                     # Local checks and disposable VM tests
+├── tests/
+│   ├── system/                # Hardware, configuration and boot behaviour
+│   ├── installer/
+│   │   ├── linux/             # Guided installation and disposable VM checks
+│   │   └── macos/             # Mac preparation and boot choices
+│   ├── packaging/             # Build tools, images and download archives
+│   └── support/               # Shared test runner support
 ├── docs/                      # This handbook
 ├── LICENSES/                  # Licence texts
 ├── NOTICE                     # Installer licences and sources
@@ -271,6 +277,9 @@ modules. See the [packaging notes](../packaging/guix/README.md).
 contains the programs that prepare, assemble and check them. Local records, caches
 and assembled downloads go under `build_dir` (normally `build/`); Guix
 build outputs remain in its store.
+
+Tests follow the same subjects. Each directory keeps its checks, fixtures
+and runners together; `tests/support/` holds the shared runner setup.
 
 A good first stop is `with-asahi-hardware` in [hardware.scm][hardware].
 It shows how the Mac’s hardware support becomes part of a Guix system.

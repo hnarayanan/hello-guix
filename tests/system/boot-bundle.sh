@@ -4,7 +4,7 @@
 # Check saved components without boot code execution or writes to EFI.
 set -euo pipefail
 export LC_ALL=C
-bundle=${1:?Usage: bash tests/boot-bundle.sh ASAHI-BOOT-DIRECTORY}
+bundle=${1:?Usage: bash tests/system/boot-bundle.sh ASAHI-BOOT-DIRECTORY}
 work=$(mktemp -d "${TMPDIR:-/tmp}/hello-guix-boot-check.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 

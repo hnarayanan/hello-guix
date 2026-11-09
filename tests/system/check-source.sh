@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Harish Narayanan
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Build fictional configurations and recover them using only their saved source.
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../support/common.sh"
 plan_only=false
 desktop=false
 for option in "$@"; do
@@ -16,7 +16,7 @@ start_check source-check
 (
 build_runtime
 clean_guix describe -f channels > "$records/channels.scm"
-clean_guix repl -L "$source/packaging/guix/channel" tests/runtime.scm packaging/guix/channels.scm "$records/channels.scm"
+clean_guix repl -L "$source/packaging/guix/channel" tests/system/runtime.scm packaging/guix/channels.scm "$records/channels.scm"
 
 variants=(console)
 grafts=(--no-grafts)
@@ -38,7 +38,7 @@ for variant in "${variants[@]}"; do
     esac
     printf '(use-modules (gnu) (gnu services desktop) (gnu services networking))\n(define test-services %s)\n' \
         "$services" > "$bundle/config.scm"
-    cat "$source/tests/source-system.scm" >> "$bundle/config.scm"
+    cat "$source/tests/system/source-system.scm" >> "$bundle/config.scm"
     printf 'private neighbouring file\n' > "$bundle/DO-NOT-COPY"
     cd "$directory" # Do not let the checkout rescue imports.
     clean_guix system build ${grafts[@]+"${grafts[@]}"} --save-provenance --derivation \
@@ -68,7 +68,7 @@ for variant in "${variants[@]}"; do
     test ! -e "$saved/DO-NOT-COPY"
     rm "$bundle/DO-NOT-COPY"
     diff -r "$bundle" "$saved"
-    clean_guix repl -L "$source/packaging/guix/channel" "$source/tests/runtime.scm" "$saved/channels.scm" system/channels.scm
+    clean_guix repl -L "$source/packaging/guix/channel" "$source/tests/system/runtime.scm" "$saved/channels.scm" system/channels.scm
 
     cp -R -L "$saved" recovered
     chmod -R u+w recovered

@@ -24,13 +24,13 @@ from unittest.mock import patch
 import zipfile
 
 
-PROJECT = Path(__file__).resolve().parents[1]
+PROJECT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT / "scripts/packaging"))
 from asahi_image import check_os, check_payload, sha256, stage
 from source_record import record_snapshot
 
 
-from payload_fixtures import ENTRY, PACKAGE_DIRECTORY, efi_image, ram_files, root_image
+from .payload_fixtures import ENTRY, PACKAGE_DIRECTORY, efi_image, ram_files, root_image
 
 
 class PayloadTests(unittest.TestCase):

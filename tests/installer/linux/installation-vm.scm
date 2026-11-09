@@ -15,9 +15,9 @@
 
 (define here (dirname (current-filename)))
 (define payload
-  (primitive-load (string-append here "/../../packaging/guix/recipes/setup-install.scm")))
+  (primitive-load (string-append here "/../../../packaging/guix/recipes/setup-install.scm")))
 (define image-builder
-  (primitive-load (string-append here "/../../packaging/guix/recipes/ram-image.scm")))
+  (primitive-load (string-append here "/../../../packaging/guix/recipes/ram-image.scm")))
 (define setup (operating-system-with-provenance (package-source payload)))
 (define image (image-builder 'hello-guix-vm (package-source payload)))
 (define (tool package command)
@@ -125,7 +125,7 @@
         (invoke #$(tool "mtools" "/bin/mcopy") "-m" "-i" "checks.img"
                 #$(local-file "installation-boot.sh") "::/boot.sh")
         (invoke #$(tool "mtools" "/bin/mcopy") "-m" "-i" "checks.img"
-                #$(local-file "../boot-bundle.sh") "::/boot-bundle.sh")
+                #$(local-file "../../system/boot-bundle.sh") "::/boot-bundle.sh")
         (utime "boot.sha256" 1 1)
         (invoke #$(tool "mtools" "/bin/mcopy") "-m" "-i" "checks.img"
                 "boot.sha256" "::/boot.sha256")))))

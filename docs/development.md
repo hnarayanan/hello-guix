@@ -151,7 +151,7 @@ We can add that choice to a configuration, then check that
 `with-asahi-hardware` preserves it when adding the Mac’s requirements.
 
 We’ll start with `console`, a fictional system in
-[`tests/hardware.scm`](../tests/hardware.scm), and add Guix’s module-loading
+[`tests/system/hardware.scm`](../tests/system/hardware.scm), and add Guix’s module-loading
 service:
 
 ```scheme
@@ -197,7 +197,7 @@ user in the Guix development shell. Results and logs go under `build/`.
 
 The first two mostly inspect definitions and temporary files. The latter
 two build systems, so allow more time and space. Their
-[test script](../tests/guix/check-source.sh) accepts `--dry-run` to preview
+[test script](../tests/system/check-source.sh) accepts `--dry-run` to preview
 the work, and `--desktop` to include both systems.
 
 ## Build and test the installer

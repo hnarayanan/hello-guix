@@ -17,13 +17,13 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-PROJECT = Path(__file__).resolve().parents[1]
+PROJECT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT / "scripts/packaging"))
 from asahi_image import stage
 from source_record import checksum_text, file_hashes, record_snapshot, sha256, source_files
 from macos_bundle import (assemble, build_libffi, build_package, check_assembly, check_bundle,
                           check_catalogue, inventory, main, unpack_runtime, verify_checksums)
-import payload_fixtures as fixtures
+from . import payload_fixtures as fixtures
 
 
 def archive_files(path, files):
@@ -218,7 +218,7 @@ class MacOSBundleTests(unittest.TestCase):
                          {"installation.md", "configuration.md", "recovery.md",
                           "philosophy.md", "channels.scm"})
         self.assertFalse((self.source / "image-source").exists())
-        self.assertTrue((self.source / "tests/test_macos_bundle.py").is_file())
+        self.assertTrue((self.source / "tests/packaging/test_macos_bundle.py").is_file())
         self.assertFalse((self.source / "upstream").exists())
         for name in ("asahi-installer-source.json", "asahi-installer-runtime.json",
                      "runtime-sources.json"):

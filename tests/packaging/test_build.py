@@ -14,9 +14,9 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/packaging"))
 from source_record import PROJECT, record_snapshot, source_files, verify_snapshot
-import payload_fixtures as fixtures
+from . import payload_fixtures as fixtures
 
 
 class BuildTests(unittest.TestCase):
@@ -155,7 +155,7 @@ class BuildTests(unittest.TestCase):
                 (self.project / name).write_bytes(original)
 
     def test_snapshot_tracks_guix_test_runners_and_recipes(self):
-        names = (Path("tests/guix/check-vm.sh"), Path("tests/guix/configuration-check.scm"))
+        names = (Path("tests/installer/linux/check-vm.sh"), Path("tests/installer/linux/configuration-check.scm"))
         record_snapshot(self.inputs, self.project)
         for name in names:
             self.assertEqual((self.inputs / name).read_bytes(),
@@ -447,7 +447,7 @@ if os.environ.get("HELLO_GUIX_TEST_FAILURE") == stage:
                 expected_calls = [{"args": expected, "source": None}]
                 if failure != "prepare":
                     expected_calls.append({
-                        "args": ["-m", "unittest", "discover", "-s", "tests", "-v"],
+                        "args": ["-m", "unittest", "discover", "-s", "tests", "-t", ".", "-v"],
                         "source": str((self.project / source).resolve()),
                     })
                 self.assertEqual(calls, expected_calls)

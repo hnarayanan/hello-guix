@@ -2,13 +2,13 @@
 # SPDX-FileCopyrightText: 2026 Harish Narayanan
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Test Guix's configuration writers, then calculate console and desktop derivations.
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../../support/common.sh"
 start_check configuration-check
 (
 pinned_guix describe -f channels > "$records/channels.scm"
 installer_source
 pinned_guix build -L "$records/installer-source" -L packaging/guix/installer -L packaging/guix/channel ${build_options[@]+"${build_options[@]}"} \
-    --root="$records/check-program" --file=tests/guix/configuration-check.scm
+    --root="$records/check-program" --file=tests/installer/linux/configuration-check.scm
 "$PYTHON" "$test_project/scripts/packaging/source_record.py" verify --directory "$source"
 
 # SRFI-64 saves its test report in the current directory.

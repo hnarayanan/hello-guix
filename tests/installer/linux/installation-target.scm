@@ -38,7 +38,7 @@
                                       (eq? (car name) 'hello-guix))))
        (program-file "installation-target-guest"
          #~(begin
-              (setenv "BOOT_FILES_TEST" #$(local-file "../boot.scm"))
+              (setenv "BOOT_FILES_TEST" #$(local-file "../../system/boot.scm"))
               (primitive-load #$(local-file "installation-target-guest.scm")))
          #:guile guile-3.0-latest))))
 

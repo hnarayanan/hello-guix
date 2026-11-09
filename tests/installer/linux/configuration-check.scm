@@ -7,18 +7,18 @@
   (primitive-load (string-append (dirname (current-filename)) "/installer-runtime.scm")))
 (define configuration-support
   (primitive-load (string-append (dirname (current-filename))
-                                 "/../../packaging/guix/recipes/configuration-support.scm")))
+                                 "/../../../packaging/guix/recipes/configuration-support.scm")))
 
 (installer-test "check-mac-configuration"
   #~(begin
       (use-modules (hello-guix installer linux configuration))
       (for-each
        (lambda (file) (unless (primitive-load file) (exit #f)))
-       (list #$(local-file "../target.scm")
-             #$(local-file "../installer-final.scm")
-             #$(local-file "../installation-files.scm")
-             #$(local-file "../installation.scm")))
+       (list #$(local-file "target.scm")
+             #$(local-file "installer-final.scm")
+             #$(local-file "installation-files.scm")
+             #$(local-file "installation.scm")))
       ((@ (hello-guix installer linux installation-files) prepare-configuration-support)
-       #$configuration-support #$(local-file "../../packaging/guix/channels.scm")
+       #$configuration-support #$(local-file "../../../packaging/guix/channels.scm")
        (cadr (command-line)))
-      (primitive-load #$(local-file "../configuration.scm"))))
+      (primitive-load #$(local-file "configuration.scm"))))

@@ -1,6 +1,6 @@
 ;; SPDX-FileCopyrightText: 2026 Harish Narayanan
 ;; SPDX-License-Identifier: GPL-3.0-or-later
-;; Run through tests/guix/check-configuration.sh on Guix. All data is fictional.
+;; Run through tests/installer/linux/check-configuration.sh on Guix. All data is fictional.
 
 (use-modules (gnu installer hardware)
              (gnu installer hostname)
@@ -118,7 +118,7 @@
 (test-equal "EFI UUID is canonicalized"
   (field 'file-systems) (field 'file-systems (generate #:efi "a1b2-c3d4")))
 
-;; The test program validates this target in tests/target.scm first.
+;; The test program validates this target in tests/installer/linux/target.scm first.
 ;; Check that Guix's configuration writer accepts it.
 (test-equal "verified target reaches the ordinary configuration writer"
   configuration (target-system-configuration steps results verified-test-target))

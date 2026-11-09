@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-PROJECT = Path(__file__).resolve().parents[1]
+PROJECT = Path(__file__).resolve().parents[2]
 
 
 class RetainedBootBundleTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class RetainedBootBundleTests(unittest.TestCase):
             for name, content, valid in cases:
                 with self.subTest(name=name):
                     (bundle / "boot.bin").write_bytes(content)
-                    result = subprocess.run(["bash", str(PROJECT / "tests/boot-bundle.sh"),
+                    result = subprocess.run(["bash", str(PROJECT / "tests/system/boot-bundle.sh"),
                                              str(bundle)], capture_output=True, text=True)
                     self.assertEqual(result.returncode == 0, valid, result.stderr)
 

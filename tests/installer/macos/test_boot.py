@@ -18,7 +18,7 @@ import uuid
 import zlib
 
 
-PROJECT = Path(__file__).resolve().parents[1]
+PROJECT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT / "patches/asahi-macos-installer/overlay"))
 from guix_boot import boot_store, initialize_boot, partition_number
 

@@ -28,9 +28,10 @@ case "${1:-python}" in
         "$PYTHON" scripts/packaging/asahi_source.py --directory "$temporary/asahi-installer" \
             --cache-directory "$build_dir/cache" ${2:+--archive "$2"}
         export ASAHI_SOURCE=$(cd "$temporary/asahi-installer" && pwd -P)
-        "$PYTHON" -m unittest discover -s tests -v ;;
-    hardware|source|configuration)
-        bash "tests/guix/check-$1.sh" ;;
-    desktop) bash tests/guix/check-source.sh --desktop ;;
-    installation-target|installation) bash tests/guix/check-vm.sh "$1" ;;
+        "$PYTHON" -m unittest discover -s tests -t . -v ;;
+    hardware|source)
+        bash "tests/system/check-$1.sh" ;;
+    configuration) bash tests/installer/linux/check-configuration.sh ;;
+    desktop) bash tests/system/check-source.sh --desktop ;;
+    installation-target|installation) bash tests/installer/linux/check-vm.sh "$1" ;;
 esac
