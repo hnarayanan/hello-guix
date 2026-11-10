@@ -13,6 +13,16 @@ if test -n "${CHECK_CHANNEL_PROFILE:-}"; then
         exit 1
     fi
 fi
+if test -n "${CHECK_FIRMWARE_ARCHIVE:-}"; then
+    case "$CHECK_FIRMWARE_ARCHIVE" in
+        /*) ;;
+        *) echo 'firmware_archive must be an absolute archive path.' >&2; exit 1 ;;
+    esac
+    if ! test -f "$CHECK_FIRMWARE_ARCHIVE" || ! test -r "$CHECK_FIRMWARE_ARCHIVE"; then
+        printf 'Firmware archive is not readable: %s\n' "$CHECK_FIRMWARE_ARCHIVE" >&2
+        exit 1
+    fi
+fi
 start_check configuration-check
 (
 configuration_arguments=("$records")
@@ -34,10 +44,13 @@ if test -n "${CHECK_CHANNEL_PROFILE:-}"; then
         printf 'Selected profile has no executable bin/guix: %s\n' "$channel_profile" >&2
         exit 1
     fi
-    channel_guix describe -f channels > "$records/handoff-channels.scm"
-    configuration_arguments+=("$records/handoff-channels.scm")
+    # The generated check program invokes the production setup reader.
+    configuration_arguments+=("$channel_profile/bin/guix")
 fi
 pinned_guix describe -f channels > "$records/channels.scm"
+pinned_guix repl -L "$source/packaging/guix/installer" \
+    "$source/tests/installer/linux/firmware-source.scm" \
+    "$records/firmware-source" "${MAX_JOBS:-}" "${CORES:-}" "${CHECK_FIRMWARE_ARCHIVE:-}"
 installer_source
 pinned_guix build -L "$records/installer-source" -L packaging/guix/installer -L packaging/guix/channel ${build_options[@]+"${build_options[@]}"} \
     --root="$records/check-program" --file=tests/installer/linux/configuration-check.scm
@@ -62,7 +75,7 @@ if test -n "${CHECK_CHANNEL_PROFILE:-}"; then
     channel_guix repl "$source/tests/installer/linux/channel-handoff.scm" \
         "$records/channel-system.scm" "$records/handoff"
     channel_guix system build --no-grafts --save-provenance --derivation \
-        "$records/handoff/provenance/configuration.scm" > "$records/handoff/recovered.drv"
+        "$records/handoff/recovery/config.scm" > "$records/handoff/recovered.drv"
     cmp "$records/handoff/system.drv" "$records/handoff/recovered.drv"
     printf '\nGenerated channel declaration replayed with the recorded profile.\n'
 fi

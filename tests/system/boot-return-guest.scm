@@ -71,6 +71,31 @@
 (assert "Bundle return unexpectedly replaced the newer GRUB installation"
         (string=? "GRUB-C" (read "/boot/efi/grub-fixture")))
 
+;; Exercise the same real FAT filesystem at a different declared mount point.
+(mkdir "/efi")
+(assert "Could not move the fixture EFI mount"
+        (zero? (system* mount-command "--move" "/boot/efi" "/efi")))
+(set! active "/efi/m1n1/boot.bin")
+(set! backup "/efi/m1n1/boot.bin.old")
+(reject system-a) ; The default path must not discover or fall back to /efi.
+(assert "Retained return at alternate mount point failed"
+        (zero? (system* restore "--target" "/efi" system-a)))
+(assert "Alternate retained bytes missing" (string=? "retained-A" (read active)))
+(assert "Exact return at alternate mount point failed"
+        (zero? (system* restore "--target" "/efi" "--restore" saved system-a)))
+(assert "Alternate exact bytes missing" (string=? "accepted-A" (read active)))
+(reject "--target" "/missing-efi" "--restore" saved system-a)
+(reject "--target" "efi" "--restore" saved system-a)
+(reject "--target" "/" "--restore" saved system-a)
+(let ((chosen (getenv "BOOT_TEST_PARTUUID")))
+  (setenv "BOOT_TEST_PARTUUID" "wrong-partition")
+  (reject "--target" "/efi" "--restore" saved system-a)
+  (setenv "BOOT_TEST_PARTUUID" chosen))
+(assert "Could not restore the fixture EFI mount"
+        (zero? (system* mount-command "--move" "/efi" "/boot/efi")))
+(set! active "/boot/efi/m1n1/boot.bin")
+(set! backup "/boot/efi/m1n1/boot.bin.old")
+
 (setenv "BOOT_TEST_PARTUUID" "wrong-partition")
 (assert "Wrong partition accepted by recovery CLI"
         (not (zero? (system* restore "--restore" saved system-a))))

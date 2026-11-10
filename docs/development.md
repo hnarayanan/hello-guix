@@ -207,11 +207,38 @@ Hello Guix, also check the generated declaration through that profile:
 make check code only=configuration channel_profile=/absolute/path/to/the/profile
 ```
 
-The writer uses its channel records to generate ordinary imports and future
-pull defaults. The selected profile then evaluates the declaration and
-replays its saved copy in a fresh process. The normal configuration checks
-still use the release tools; this optional step checks the handoff to the
-runtime channel.
+Setup asks its selected `bin/guix describe -f channels` for channel records
+before preparing the target. The generated test program exercises this reader
+with the release setup tools and, when supplied, the authenticated profile.
+That profile then evaluates the generated declaration and replays its saved
+copy in a fresh process.
+
+The release profile contains Guix and Asahi, so it keeps the 0.1 copied-support
+declaration and pinned defaults. A profile including Hello Guix generates
+an ordinary system followed by `on-apple-silicon`, with its firmware directory
+and recursive SHA-256 as explicit inputs. Modules come from the channel, and
+future pulls follow the recorded branches. User channel files remain the native Guix override
+for those defaults.
+
+Retire the copied-support path once an authenticated Hello Guix channel is
+the release default and both fresh installation and 0.1 migration/replay have
+been accepted. Keep the old declaration as a migration fixture.
+
+The configuration check also prepares synthetic Asahi firmware archives and
+checks their manifests. To exercise the same preparation with an existing
+archive, supply its full path:
+
+```sh
+make check code only=configuration firmware_archive=/boot/efi/vendorfw/firmware.cpio
+```
+
+This builds a firmware directory in the store and records its origin under
+`build/configuration-check-*/firmware-source/`. The supplied archive is read
+as an input. Synthetic fixtures also exercise publishing that directory beside
+a configuration, retrying it and rejecting changed or incomplete inputs.
+With `channel_profile`, the check evaluates the generated declaration,
+retains its firmware and origin record, then restores them beside the saved
+configuration for replay.
 
 ### Check against another Guix
 
@@ -247,8 +274,11 @@ copy of Hello Guix. A separate declaration keeps two personal helper files
 explicitly and replays its retained `configuration-source/config.scm` with
 the working copies moved aside.
 
-A synthetic firmware fixture exercises `on-apple-silicon` with an explicit
-file-like input. It builds only small firmware/source wrappers and native
+A synthetic firmware fixture checks the declared hash against `guix hash -r`,
+rejects changed files before building and compares the pinned system derivation
+with the earlier unpinned form for identical bytes. Guix’s saved provenance
+records the declaration text, so that record changes when we edit it. The
+fixture builds small firmware/source wrappers, early-boot archives and native
 provenance, checks retained bytes and references, and derives systems after
 package, hostname and firmware changes. Recovery copies the saved declaration
 and restores its retained firmware at the declared relative path, then checks
@@ -322,6 +352,20 @@ Guix's own `system build --dry-run` may stop at the first missing set, so its
 initial list is not a complete build or download total. Our Make plan leaves
 that work to the build.
 
+### Check firmware during early boot
+
+The runtime check inspects the combined initrd archive. To also ask Linux to
+unpack it and read the firmware at the start of `/init`, run:
+
+```sh
+make check code only=runtime-firmware GUIX=/absolute/path/to/the/profile/bin/guix
+```
+
+This boots a small ARM64 VM with synthetic firmware, including file aliases
+and distinct hard-link groups. It needs the selected profile's kernel and
+QEMU, which may require a build if they are not cached. The VM has no disks
+or network, and its console log goes in `build/runtime-firmware-*/`.
+
 ### Check authenticated channel delivery
 
 To exercise fetching and replaying Hello Guix as a signed channel, use the
@@ -392,6 +436,9 @@ a generation’s retained bundle or an explicit saved file:
 hello-guix-boot SYSTEM-DIRECTORY
 hello-guix-boot --restore SAVED-BOOT-FILE SYSTEM-DIRECTORY
 ```
+
+Both use `/boot/efi`. For another mount point, put `--target /efi` before
+these arguments. The command still checks that it is this Mac's EFI partition.
 
 These are the two forms of the program retained at
 `SYSTEM-DIRECTORY/asahi-boot/install`. The second requires a backup whose

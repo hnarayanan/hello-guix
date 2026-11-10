@@ -40,6 +40,9 @@
           (put "/kernel/lib/dtbs/apple/nested/b.dtb" #vu8(2 129))
           (put "/kernel/lib/dtbs/apple/a.dtb" #vu8(1 128))
           (put "/kernel/lib/dtbs/apple/ignored.txt" #vu8(99))
+          (put "/kernel/lib/dtbs/apple/ignored-dtb" #vu8(98))
+          (put "/kernel/lib/dtbs/apple/ignored.dtb.gz" #vu8(97))
+          (mkdir-p (string-append #$output "/kernel/lib/dtbs/apple/directory.dtb"))
           (put "/m1n1/libexec/m1n1.bin" #vu8(0 255 77 49))
           (put "/u-boot/libexec/u-boot-nodtb.bin" #vu8(66 79 79 84 0 255))))))
 (define kernel (file-append fixtures "/kernel"))
@@ -69,6 +72,16 @@
 
 (test-begin "boot-build")
 (define runner (test-runner-current))
+(define equivalent-kernel (file-append fixtures "/kernel"))
+(define bootloader-for (@@ (hello-guix system boot) asahi-bootloader))
+(test-eq "bundle cache preserves the same kernel identity"
+  (asahi-boot-bundle kernel) (asahi-boot-bundle kernel))
+(test-assert "bundle cache distinguishes separately constructed inputs"
+  (not (eq? (asahi-boot-bundle kernel) (asahi-boot-bundle equivalent-kernel))))
+(test-eq "loader cache preserves the same kernel identity"
+  (bootloader-for kernel) (bootloader-for kernel))
+(test-assert "loader cache distinguishes separately constructed inputs"
+  (not (eq? (bootloader-for kernel) (bootloader-for equivalent-kernel))))
 (with-store store
   (apply set-build-options store
          (append (if (string-null? (cadr arguments)) '()

@@ -43,23 +43,28 @@ The developing channel interface makes the firmware input explicit. We can
 write an ordinary system declaration, then finish with:
 
 ```scheme
-(use-modules (guix gexp) (hello-guix apple-silicon))
+(use-modules (guix packages) (hello-guix apple-silicon))
 
 (on-apple-silicon
  my-system
- #:firmware (local-file "hello-guix/firmware" #:recursive? #t))
+ #:firmware (apple-firmware "hello-guix/firmware"
+              (sha256 (base32 "…"))))
 ```
 
 Here `my-system` is our `operating-system` value. The directory contains
-unpacked device firmware, with paths such as `brcm/` and `apple/`. Guix
-imports these files into its store and keeps them with the system's
+unpacked device firmware, with paths such as `brcm/` and `apple/`. Its hash
+is the ordinary `guix hash -r hello-guix/firmware` result. Evaluation rejects
+a changed directory; matching bytes keep the same build inputs. Guix imports these files into its store and keeps them with the system's
 firmware inputs. This interface uses Guix's firmware service, so activation
-uses the declared files instead of discovering firmware on EFI. It does
-not yet supply firmware in the initrd; the earlier startup boundary
-[described below](#making-firmware-available-to-drivers) remains open.
-The 0.1 installer still generates the existing `with-asahi-hardware` form;
-preparing this explicit input for an installed system is a separate migration
-step still to be implemented.
+uses the declared files instead of discovering firmware on EFI. The same
+input also supplies an archive that Linux unpacks before running `/init`,
+so early setup can use it too.
+
+When setup's evaluator includes the Hello Guix channel, the installer
+prepares this directory from Asahi's saved archive before evaluating the
+configuration. It checks the archive's manifest, leaves a small origin
+record with the firmware, then hashes that complete directory for the declaration. The released 0.1 installer and existing installations
+keep their earlier handoff; moving them to this interface is a separate step.
 
 ### The files Guix builds
 
@@ -177,8 +182,12 @@ flowchart TD
 
 This arrangement serves drivers loaded after the main filesystem is
 available. Devices that need firmware within the initrd need it sooner.
-That earlier handoff still needs integration and testing in Hello Guix.
-The installation guide describes the [hardware tested so far][tested].
+The explicit `on-apple-silicon` interface supplies them in a second initrd
+archive while preserving Guix's normal initialization. Archive preparation
+and early availability are checked separately from physical hardware: a VM
+can confirm that Linux unpacks the files, but it cannot show that a Mac's
+devices use them successfully. The installation guide describes the
+[hardware tested so far][tested].
 
 ### Starting services and user sessions
 
@@ -245,9 +254,10 @@ the prepared disk filesystem at `/mnt`, making it accessible within that
 tree. Files written there belong to the system we are installing.
 
 Guix’s installer turns our answers into a Scheme declaration. Hello Guix
-supplies the prepared storage settings and passes the declaration through
-`with-asahi-hardware`. Guix then installs the resulting system using its
-usual installation machinery.
+supplies the prepared storage settings and hardware adaptation. The released
+installer uses `with-asahi-hardware`; channel-backed setup writes an ordinary
+system followed by `on-apple-silicon` with its prepared firmware input.
+Guix installs the resulting system using its usual installation machinery.
 
 Guix reuses packages already available in setup and places new downloads
 and builds on the destination disk. The installed system receives all

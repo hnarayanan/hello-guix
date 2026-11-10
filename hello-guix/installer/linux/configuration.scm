@@ -8,11 +8,14 @@
   #:use-module (ice-9 match)
   #:use-module ((gnu installer user) #:select (user-name))
   #:use-module (gnu system uuid)
+  #:use-module (guix base32)
   #:use-module (guix channels)
   #:use-module ((guix read-print) #:select (comment vertical-space))
   #:use-module (hello-guix installer linux target)
+  #:use-module (rnrs bytevectors)
   #:use-module (srfi srfi-1)
-  #:export (prepared-system-steps system-configuration target-system-configuration))
+  #:export (prepared-system-steps configuration-channels
+            system-configuration target-system-configuration))
 
 (define* (prepared-system-steps steps finish #:key prepare)
   "Use Guix's settings and navigation with a prepared target.
@@ -87,18 +90,27 @@ welcome page, inside Guix's error handler. Keep the other steps unchanged."
              (type "vfat"))
             %base-file-systems))))
 
-(define (followed-channel-code channels)
-  ;; Keep trust introductions and the caller's URLs/branches. Only future
-  ;; version selection changes; native system provenance records exact inputs.
+(define (configuration-channels channels)
+  "Validate the setup evaluator's channel records.
+Return CHANNELS when Hello Guix is present, or #f for the legacy Guix/Asahi
+profile. Reject incomplete or ambiguous records instead of falling back."
   (unless (and (list? channels) (every channel? channels)
                (= (length channels)
                   (length (delete-duplicates (map channel-name channels))))
                (every (lambda (name) (find (lambda (channel)
                                              (eq? name (channel-name channel)))
                                            channels))
-                      '(guix asahi hello-guix))
+                      '(guix asahi))
                (every channel-introduction channels))
-    (error "Expected distinct Guix, Asahi and Hello channels with trust introductions"))
+    (error "Expected distinct Guix and Asahi channels with trust introductions"))
+  (and (find (lambda (channel) (eq? 'hello-guix (channel-name channel))) channels)
+       channels))
+
+(define (followed-channel-code channels)
+  ;; Keep trust introductions and the caller's URLs/branches. Only future
+  ;; version selection changes; native system provenance records exact inputs.
+  (unless (configuration-channels channels)
+    (error "Expected the setup evaluator to include the Hello Guix channel"))
   `(list ,@(map (lambda (selected)
                   (channel->code (channel (inherit selected) (commit #f))))
                 channels)))
@@ -148,7 +160,24 @@ welcome page, inside Guix's error handler. Keep the other steps unchanged."
             (field field))
           fields))))
 
-(define* (system-configuration steps results #:key root-uuid efi-uuid channels)
+(define (checked-firmware-path path)
+  (unless (and (string? path)
+               (every (lambda (part) (not (member part '("" "." ".."))))
+                      (string-split path #\/))
+               (not (string-index path #\nul)))
+    (error "Expected a relative firmware directory without traversal" path))
+  path)
+
+(define (checked-firmware-sha256 hash)
+  (let ((bytes (and (string? hash)
+                    (false-if-exception (nix-base32-string->bytevector hash)))))
+    (unless (and bytes (= 32 (bytevector-length bytes))
+                 (string=? hash (bytevector->nix-base32-string bytes)))
+      (error "Expected the recursive SHA-256 of the prepared firmware directory" hash)))
+  hash)
+
+(define* (system-configuration steps results
+                               #:key root-uuid efi-uuid channels firmware firmware-sha256)
   "Return Scheme forms for Guix's configuration writer, using STEPS and RESULTS
 from the installer. This function does not run steps, evaluate forms, or access
 devices. The caller must check the target and make sure its UUIDs are unique.
@@ -157,8 +186,16 @@ step sets account passwords.
 
 When CHANNELS is supplied, it must describe the authenticated profile that
 will evaluate the installation, including Hello Guix. Write unpinned future
-pull defaults and import its modules normally. Without it, retain the 0.1
-copied-support contract until the installer runtime includes that channel."
+pull defaults and import its modules normally. FIRMWARE must then name its
+prepared directory relative to the declaration; FIRMWARE-SHA256 is its ordinary
+recursive SHA-256 in Guix base32. With none of these inputs, retain the 0.1
+copied-support contract."
+  (unless (and (eq? (not channels) (not firmware))
+               (eq? (not channels) (not firmware-sha256)))
+    (error "Channel-backed configuration requires a firmware directory and its SHA-256"))
+  (when firmware
+    (checked-firmware-path firmware)
+    (checked-firmware-sha256 firmware-sha256))
   (for-each
    (lambda (id)
      (let ((answer (result-step results id)))
@@ -201,7 +238,9 @@ copied-support contract until the installer runtime includes that channel."
                     (guix channels)
                     (asahi guix services console-font)
                     (asahi guix services substitutes)
-                    (hello-guix system hardware)
+                    ,@(if followed
+                          '((guix packages) (hello-guix apple-silicon))
+                          '((hello-guix system hardware)))
                     (hello-guix system runtime)
                     ,@(if followed '() '((hello-guix system configuration-retention)))
                     ,@(if (any desktop-system-service? (result-step results 'services))
@@ -209,15 +248,25 @@ copied-support contract until the installer runtime includes that channel."
      (append-map
       (match-lambda
         (('operating-system fields ...)
-         (list (comment
-                ";; Add the Mac's hardware support to this system description.\n")
-               `(with-asahi-hardware
-                 (operating-system ,@fields))))
+         (if followed
+             (list `(define my-system (operating-system ,@fields))
+                   (vertical-space 1)
+                   (comment
+                    ";; Add the Mac's hardware support and its prepared firmware.\n")
+                   `(on-apple-silicon
+                     my-system
+                     #:firmware (apple-firmware ,firmware
+                                  (sha256 (base32 ,firmware-sha256)))))
+             (list (comment
+                    ";; Add the Mac's hardware support to this system description.\n")
+                   `(with-asahi-hardware
+                     (operating-system ,@fields)))))
         (form (list form)))
       (format-configuration (append settings (list hardware))
                             (acons 'mac-hardware #t results))))))
 
-(define* (target-system-configuration steps results target #:key channels)
+(define* (target-system-configuration steps results target
+                                      #:key channels firmware firmware-sha256)
   "Generate configuration forms from TARGET after validation.
 The caller must also check that the target is available for installation."
   (unless (target? target)
@@ -225,4 +274,5 @@ The caller must also check that the target is available for installation."
   (system-configuration steps results
                         #:root-uuid (target-root-uuid target)
                         #:efi-uuid (target-efi-uuid target)
-                        #:channels channels))
+                        #:channels channels #:firmware firmware
+                        #:firmware-sha256 firmware-sha256))

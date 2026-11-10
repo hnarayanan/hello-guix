@@ -16,9 +16,9 @@
   #:export (asahi-boot-bundle asahi-boot-service-type with-asahi-bootloader))
 
 (define (make-asahi-boot-bundle kernel m1n1 u-boot)
-  ;; The format and DTB selection follow write-m1n1/install-bootloader-to-esp
-  ;; in Asahi Guix's (asahi guix build bootloader m1n1), unchanged between
-  ;; ee2e7465 and b9132769. Copy bytes directly instead of invoking a shell;
+  ;; The format follows write-m1n1/install-bootloader-to-esp in Asahi Guix's
+  ;; (asahi guix build bootloader m1n1), unchanged between ee2e7465 and
+  ;; b9132769. Select regular Apple DTBs and copy bytes without a shell;
   ;; retain gzip -c's filename and timestamp header exactly.
   ;; https://codeberg.org/asahi-guix/channel/src/commit/b9132769b361431e999f7d166d715ef4c6e101d2/modules/asahi/guix/build/bootloader/m1n1.scm
   (computed-file "asahi-boot"
@@ -33,8 +33,11 @@
                 (put-bytevector output bytes)
                 (loop (get-bytevector-n input 65536)))))
           (define dtbs
-            (find-files #$(file-append kernel "/lib/dtbs/apple") "\\.*.dtb$"
-                        #:stat stat #:directories? #t))
+            (find-files #$(file-append kernel "/lib/dtbs/apple")
+                        (lambda (file info)
+                          (and (eq? 'regular (stat:type info))
+                               (string-suffix? ".dtb" file)))
+                        #:stat stat))
           (unless (pair? dtbs)
             (error "No Apple device trees in the selected kernel" #$kernel))
           (mkdir #$output)
@@ -57,7 +60,7 @@
           (symlink #$(boot-command) (string-append #$output "/install"))))))
 
 (define asahi-boot-bundle
-  (mlambda (kernel)
+  (mlambdaq (kernel)
     "Build the stage-two boot bundle for KERNEL without writes to an EFI partition.
 Keep its inputs so the system generation records its boot code."
     (make-asahi-boot-bundle kernel asahi-m1n1 asahi-u-boot)))
@@ -76,7 +79,7 @@ Keep its inputs so the system generation records its boot code."
 ;; bootloaders that happen to use GRUB's name. The bundle is shared with the
 ;; retained generation entry and does not depend on the complete system.
 (define asahi-bootloader
-  (mlambda (kernel)
+  (mlambdaq (kernel)
     (bootloader
      (inherit grub-efi-removable-bootloader)
      (installer
@@ -116,19 +119,22 @@ this configuration neither discovers a machine nor installs boot files."
       #~(begin
           (use-modules (hello-guix system boot-files)
                        (ice-9 match))
-          (define* (install system #:optional (boot-file #f))
+          (define* (install system #:key boot-file (target "/boot/efi"))
             (catch #t
               (lambda ()
                 (install-system-boot system #$(file-append util-linux "/bin/findmnt")
-                                     #:boot-file boot-file))
+                                     #:boot-file boot-file #:target target))
               (lambda (key . arguments)
                 (display "Boot-bundle operation failed: " (current-error-port))
                 (print-exception (current-error-port) #f key arguments)
                 (exit 1))))
           (match (cdr (command-line))
             ((system) (install system))
-            (("--restore" boot-file system) (install system boot-file))
-            (_ (display "Usage: hello-guix-boot [--restore BOOT-FILE] SYSTEM-DIRECTORY\n"
+            (("--restore" boot-file system) (install system #:boot-file boot-file))
+            (("--target" target system) (install system #:target target))
+            (("--target" target "--restore" boot-file system)
+             (install system #:boot-file boot-file #:target target))
+            (_ (display "Usage: hello-guix-boot [--target EFI-MOUNTPOINT] [--restore BOOT-FILE] SYSTEM-DIRECTORY\n"
                         (current-error-port))
                (exit 2)))))))
 

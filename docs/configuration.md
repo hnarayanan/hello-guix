@@ -58,6 +58,40 @@ choices part of your system description.
 Custom kernels or hardware services may need further integration and
 testing before Hello Guix can support them.
 
+### Declaring firmware by content
+
+The channel-based interface being developed for the next release makes
+Apple firmware an explicit input. An ordinary system definition ends with:
+
+```scheme
+(use-modules (guix packages) (hello-guix apple-silicon))
+
+(on-apple-silicon my-system
+  #:firmware (apple-firmware "hello-guix/firmware"
+               (sha256 (base32 "…"))))
+```
+
+The path is relative to the configuration file. The hash identifies the
+whole directory, including hidden files and the installation receipt, so
+the same declaration requires the same firmware bytes on every machine.
+Firmware aliases must use relative paths within that directory, keeping the
+input portable. The installer fills in the hash after preparing the firmware. Evaluation
+refuses a mismatch and shows both hashes and the command to recompute it.
+Packages and computed files already have declared identities and can still
+be supplied directly.
+
+To update the firmware, first review the replacement files. Then, from
+the configuration directory, compute their new hash:
+
+```sh
+guix hash -r hello-guix/firmware
+```
+
+Replace the hash in the declaration with that output, changing one line,
+then build and check the updated system. Keep the previous firmware with
+its declaration if you want to reproduce the older system. This interface
+is separate from the EFI-based firmware discovery used by Hello Guix 0.1.
+
 ### Audio and Guix Home
 
 Some services run for the whole computer, while others run under your

@@ -4,7 +4,7 @@
 # Run local checks by default, or a selected Guix check on Linux.
 set -euo pipefail
 case "${1:-python}" in
-    python|runtime|runtime-channel|runtime-system|hardware|source|desktop|configuration|installation-target|installation) ;;
+    python|runtime|runtime-channel|runtime-system|runtime-firmware|hardware|source|desktop|configuration|installation-target|installation) ;;
     *) echo "Unknown code check: $1. Run make help." >&2; exit 1 ;;
 esac
 if test "$#" -gt 2; then echo 'Usage: check-code.sh [check] [source-archive]' >&2; exit 1; fi
@@ -34,6 +34,7 @@ case "${1:-python}" in
         "$PYTHON" -m unittest discover -s tests -t . -v ;;
     runtime-channel) bash tests/system/check-runtime.sh --channel ;;
     runtime-system) bash tests/system/check-runtime.sh --system ;;
+    runtime-firmware) bash tests/system/check-runtime.sh --firmware ;;
     runtime|hardware|source)
         bash "tests/system/check-$1.sh" ;;
     configuration) bash tests/installer/linux/check-configuration.sh ;;

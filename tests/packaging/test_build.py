@@ -250,6 +250,21 @@ if state.get("fail") == "boot-cli-run":
 print("fixture passed: boot-cli-run")
 ''')
         runner.chmod(0o755)
+        self.firmware_fixture = self.root / "firmware fixture"
+        self.firmware_fixture.mkdir()
+        qemu = self.firmware_fixture / "qemu"
+        qemu.write_text("#!" + sys.executable + "\n" + f'''
+import json, os, pathlib, sys
+with pathlib.Path({str(self.root / 'calls')!r}).open("a") as stream:
+    stream.write(json.dumps({{"args": sys.argv[1:], "stage": "firmware-qemu",
+                             "environment": dict(os.environ)}}) + "\\n")
+state = json.loads(pathlib.Path({str(self.runtime_state)!r}).read_text())
+if state.get("fail") == "firmware-qemu":
+    print("fixture failure: firmware-qemu", file=sys.stderr)
+    sys.exit(23)
+print(state.get("firmware_console", "HELLO-GUIX-FIRMWARE-PASS"))
+''')
+        qemu.chmod(0o755)
         self.channel_tools = self.root / "channel tools"
         self.channel_tools.mkdir()
         authentication = self.channel_tools / "bash"
@@ -269,6 +284,7 @@ print("fixture passed: channel-authentication")
         authentication.chmod(0o755)
         for directory, stage, seconds in (
                 (self.runtime_fixture, "boot-cli-timeout", "1200"),
+                (self.firmware_fixture, "firmware-timeout", "300"),
                 (self.channel_tools, "channel-timeout", "600")):
             timeout = directory / "timeout"
             timeout.write_text("#!" + sys.executable + "\n" + f'''
@@ -332,6 +348,10 @@ elif args[0] == "build" and script == "boot-cli.scm":
     root = next(arg.removeprefix("--root=") for arg in args if arg.startswith("--root="))
     pathlib.Path(root).symlink_to({str(self.runtime_fixture)!r})
     print("fixture passed: boot-cli.scm")
+elif args[0] == "build" and script == "firmware-initrd.scm":
+    root = next(arg.removeprefix("--root=") for arg in args if arg.startswith("--root="))
+    pathlib.Path(root).symlink_to({str(self.firmware_fixture)!r})
+    print("fixture passed: firmware-initrd.scm")
 elif args[0] == "repl" and script == "configuration.scm":
     directory = pathlib.Path(args[-3])
     directory.mkdir()
@@ -643,6 +663,78 @@ else:
                 self.assertTrue((records / "source/SHA256SUMS").is_file())
                 self.assertIn("fixture failure: " + stage, (records / "check.log").read_text())
                 self.assertEqual(self.calls()[-1]["stage"], stage)
+
+    def test_runtime_firmware_route_records_inputs_and_boots_an_isolated_fixture(self):
+        self.prepare_runtime_profiles()
+        self.runtime_state.write_text(json.dumps({"move_current": True}))
+        result = self.make("check", "code", "only=runtime-firmware", "jobs=1", "cores=2")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        records, = (self.project / "build").glob("runtime-firmware-*")
+        records = records.resolve()
+        self.assertEqual(self.current.resolve(), self.profiles[1])
+        self.assertEqual((records / "profile").read_text().strip(), str(self.profiles[0]))
+        self.assertEqual((records / "channel-profile").read_text().strip(),
+                         str(self.channel_profiles[0]))
+        self.assertEqual((records / "channel-channels.scm").read_text().strip(),
+                         "fixture channels for " + self.channel_profiles[0].name)
+        self.assertEqual((records / "fixture").resolve(), self.firmware_fixture.resolve())
+        self.assertTrue((records / "source/SHA256SUMS").is_file())
+        self.assertIn("HELLO-GUIX-FIRMWARE-PASS", (records / "console.log").read_text())
+        calls = self.calls()
+        self.assertEqual([call["stage"] for call in calls],
+                         ["runtime-profile.scm", "describe", "runtime-channel.scm",
+                          "channel-profile", "describe", "firmware-initrd.scm",
+                          "firmware-timeout", "firmware-qemu"])
+        build = calls[-3]
+        self.assertEqual(build["profile"], str(self.channel_profiles[0]))
+        self.assertTrue({"--no-grafts", "--max-jobs=1", "--cores=2"}.issubset(build["args"]))
+        self.assertFalse(any(call["args"][0] == "time-machine" for call in calls))
+        arguments = calls[-1]["args"]
+        for flag, value in (("-machine", "virt"), ("-accel", "tcg"), ("-nic", "none"),
+                            ("-kernel", str(records / "fixture/kernel")),
+                            ("-initrd", str(records / "fixture/initrd"))):
+            self.assertEqual(arguments[arguments.index(flag) + 1], value)
+        self.assertFalse({"-drive", "-blockdev", "-hda", "-hdb", "-hdc", "-hdd",
+                          "-fsdev", "-virtfs", "-netdev", "-net", "-device", "-incoming"}
+                         .intersection(arguments))
+        self.assertFalse(any("/dev/" in argument for argument in arguments))
+        self.assertEqual(calls[-2]["args"][3], str(records / "fixture/qemu"))
+
+    def test_runtime_firmware_route_retains_build_timeout_and_vm_failures(self):
+        self.prepare_runtime_profiles()
+        for index, (stage, status) in enumerate((("firmware-initrd.scm", 23),
+                                                 ("firmware-timeout", 124),
+                                                 ("firmware-qemu", 23))):
+            with self.subTest(stage=stage):
+                self.runtime_state.write_text(json.dumps({"fail": stage}))
+                (self.root / "calls").unlink(missing_ok=True)
+                result = self.make("check", "code", "only=runtime-firmware",
+                                   f"build_dir=build/firmware-failure-{index}")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(f"Error {status}", result.stdout)
+                records, = (self.project / f"build/firmware-failure-{index}").glob("runtime-firmware-*")
+                self.assertTrue((records / "source/SHA256SUMS").is_file())
+                log = (records / "check.log").read_text()
+                console = records / "console.log"
+                if console.exists():
+                    log += console.read_text()
+                self.assertIn("fixture failure: " + stage, log)
+                self.assertNotIn("Firmware is available before initrd setup", result.stdout)
+                self.assertEqual(self.calls()[-1]["stage"], stage)
+
+    def test_runtime_firmware_route_requires_pass_without_a_failure_marker(self):
+        self.prepare_runtime_profiles()
+        for index, console in enumerate(("booted without a result marker",
+                                          "HELLO-GUIX-FIRMWARE-PASS\nHELLO-GUIX-FIRMWARE-FAIL")):
+            with self.subTest(console=console):
+                self.runtime_state.write_text(json.dumps({"firmware_console": console}))
+                result = self.make("check", "code", "only=runtime-firmware",
+                                   f"build_dir=build/firmware-marker-{index}")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                records, = (self.project / f"build/firmware-marker-{index}").glob("runtime-firmware-*")
+                self.assertEqual((records / "console.log").read_text().strip(), console)
+                self.assertNotIn("Firmware is available before initrd setup", result.stdout)
+                self.assertEqual(self.calls()[-1]["stage"], "firmware-qemu")
 
     def test_runtime_system_requires_a_local_unix_socket_before_building(self):
         self.prepare_runtime_profiles()

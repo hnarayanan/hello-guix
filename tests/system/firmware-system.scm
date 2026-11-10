@@ -5,7 +5,7 @@
 (use-modules (gnu)
              (gnu bootloader grub)
              (gnu services base)
-             (guix gexp)
+             (guix packages)
              (hello-guix apple-silicon)
              (hello-guix system runtime))
 
@@ -38,7 +38,8 @@
          (inherit config)
          (guix (running-guix))))))))
 
-(on-apple-silicon
- my-system
- #:firmware (local-file "hello-guix/firmware" #:recursive? #t)
- #:audio? #f)
+(define firmware-input
+  (apple-firmware "hello-guix/firmware"
+    (sha256 (base32 "@FIRMWARE_SHA256@"))))
+
+(on-apple-silicon my-system #:firmware firmware-input #:audio? #f)

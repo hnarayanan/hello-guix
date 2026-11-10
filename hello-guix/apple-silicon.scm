@@ -3,4 +3,5 @@
 
 (define-module (hello-guix apple-silicon)
   #:use-module (hello-guix system hardware)
-  #:re-export (on-apple-silicon))
+  #:use-module (hello-guix system firmware)
+  #:re-export (on-apple-silicon apple-firmware))

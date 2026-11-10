@@ -5,6 +5,7 @@
 ;; This test does not access /mnt.
 
 (use-modules (hello-guix installer linux install)
+             (rnrs bytevectors)
              (srfi srfi-1)
              (srfi srfi-64))
 
@@ -14,13 +15,39 @@
 (define calls '())
 (define failure #f)
 (define client? #f)
+(define writer-channels #f)
+(define writer-firmware #f)
+(define writer-firmware-sha256 #f)
+(define hashed-firmware #f)
+(define firmware-arguments #f)
 (define (record name)
   (set! calls (append calls (list name)))
   (when (eq? failure name) (throw 'injected-failure name)))
 (define results '((locale . "en_GB.utf8") (user)))
 (define replacements
   `(((hello-guix installer linux configuration)
-     (target-system-configuration . ,(lambda _ '((operating-system (host-name "test"))))))
+     (target-system-configuration
+      . ,(lambda* (steps results target #:key channels firmware firmware-sha256)
+           (set! writer-channels channels)
+           (set! writer-firmware firmware)
+           (set! writer-firmware-sha256 firmware-sha256)
+           (when channels (record 'configuration))
+           (when (eq? failure 'configuration) (throw 'injected-failure 'configuration))
+           '((operating-system (host-name "test"))))))
+    ((hello-guix installer linux firmware)
+     (prepare-installation-firmware . ,(lambda arguments
+                                        (set! firmware-arguments arguments)
+                                        (record 'prepare-firmware))))
+    ((guix hash)
+     (file-hash* . ,(lambda* (directory #:key recursive? select?)
+                     (set! hashed-firmware directory)
+                     (unless (and recursive? (select? "firmware/.hello-guix-origin.scm" #f)
+                                  (select? "firmware/.git/config" #f))
+                       (error "Firmware hashing must cover the complete recursive directory"))
+                     (record 'hash-firmware)
+                     (make-bytevector 32 0))))
+    ((gnu installer utils)
+     (installer-log-port . ,current-error-port))
     ((hello-guix installer linux installation-files)
      (call-with-installation-target . ,(lambda (target inspect btrfs thunk)
                                         (record 'mount-target)
@@ -62,8 +89,9 @@
               (list variable (variable-ref variable) (cdr entry))))
           (cdr group)))
    replacements))
-(define (run)
-  (run-prepared-installation results '() 'target (const 'target) "btrfs" "channels" "support"))
+(define* (run #:key channels)
+  (run-prepared-installation results '() 'target (const 'target) "btrfs" "channels" "support"
+                            #:channels channels))
 (dynamic-wind
   (lambda () (for-each (lambda (entry) (variable-set! (car entry) (caddr entry))) bindings))
   (lambda ()
@@ -72,6 +100,51 @@
       '(mount-target support backup protect mount write review install unmount
         verify verify-bundle cleanup unmount-target success)
       calls)
+    (test-equal "legacy coordinator leaves channel mode disabled" #f writer-channels)
+    (test-equal "legacy declaration has no explicit firmware input" #f writer-firmware)
+    (test-equal "legacy installation does not prepare firmware" #f firmware-arguments)
+    (test-equal "legacy declaration does not acquire a firmware hash" #f writer-firmware-sha256)
+    (test-equal "legacy installation does not hash a firmware directory" #f hashed-firmware)
+    (set! calls '())
+    (run #:channels '(selected-evaluator-records))
+    (test-equal "coordinator passes explicit evaluator records to the writer"
+      '(selected-evaluator-records) writer-channels)
+    (test-equal "coordinator supplies the relative declared firmware path"
+      "hello-guix/firmware" writer-firmware)
+    (test-equal "firmware comes from this mounted target's explicit archive"
+      '("/mnt/boot/efi/vendorfw/firmware.cpio" "/mnt/etc/hello-guix/firmware")
+      firmware-arguments)
+    (test-equal "the hash covers the final directory beside the declaration"
+      "/mnt/etc/hello-guix/firmware" hashed-firmware)
+    (test-equal "the writer receives the ordinary Guix base32 hash"
+      (make-string 52 #\0) writer-firmware-sha256)
+    (test-equal "publication and hashing precede configuration generation and review"
+      '(mount-target backup protect prepare-firmware hash-firmware configuration
+        mount write review install unmount verify verify-bundle cleanup unmount-target success)
+      calls)
+    (set! failure 'prepare-firmware)
+    (set! calls '())
+    (test-error "firmware preparation failure prevents configuration evaluation"
+      'injected-failure (run #:channels '(selected-evaluator-records)))
+    (test-equal "firmware failure checks the original archive and releases the target"
+      '(mount-target backup protect prepare-firmware verify unmount-target) calls)
+    (set! failure 'hash-firmware)
+    (set! calls '())
+    (test-error "hash failure prevents configuration generation and review"
+      'injected-failure (run #:channels '(selected-evaluator-records)))
+    (test-equal "hash failure checks the original archive and releases the target"
+      '(mount-target backup protect prepare-firmware hash-firmware verify unmount-target) calls)
+    (set! failure 'configuration)
+    (set! calls '())
+    (test-error "channel configuration failure releases the prepared target"
+      'injected-failure (run #:channels '(selected-evaluator-records)))
+    (test-equal "channel configuration failure preserves firmware and releases the target"
+      '(mount-target backup protect prepare-firmware hash-firmware configuration
+        verify unmount-target) calls)
+    (set! calls '())
+    (test-error "invalid configuration fails before mounting" 'injected-failure (run))
+    (test-equal "failed configuration has not touched the target" '() calls)
+    (set! failure #f)
     (set! client? #t)
     (set! calls '())
     (test-equal "connected clients also complete" 'success (run))

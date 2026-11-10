@@ -157,8 +157,9 @@ identity when omitted. Serialize with manual returns using the host LOCK-FILE."
             ;; mounted target before replacing its early boot bundle.
             (install-target-boot source target root expected findmnt))))))
 
-(define* (install-system-boot system findmnt #:key boot-file)
-  "Install SYSTEM's retained bundle on the currently booted Mac's EFI partition.
+(define* (install-system-boot system findmnt
+                              #:key boot-file (target "/boot/efi"))
+  "Install SYSTEM's retained bundle on the booted Mac's EFI partition at TARGET.
 When BOOT-FILE is supplied, restore those explicit saved bytes instead. The
 caller must verify their checksum and association with SYSTEM; this procedure
 cannot establish that an external bundle matches the selected kernel."
@@ -180,7 +181,7 @@ cannot establish that an external bundle matches the selected kernel."
     (call-with-boot-lock "/run/hello-guix-boot.lock"
       (lambda ()
         (let ((result (install-target-boot (or boot-file (string-append bundle "/boot.bin"))
-                                          "/boot/efi" "/" chosen findmnt)))
+                                          target "/" chosen findmnt)))
           (format #t "Boot bundle ~a for ~a.~%" result system)
           (when (eq? result 'installed)
-            (format #t "Previous bundle: /boot/efi/m1n1/boot.bin.old~%")))))))
+            (format #t "Previous bundle: ~a/m1n1/boot.bin.old~%" target)))))))

@@ -36,5 +36,6 @@ under hello-guix/firmware belongs to the system's firmware inputs instead."
    (description
     "Retain a complete, readable configuration directory in this system
 generation.  Supply a file-like directory containing the configuration,
-its local helper modules and channel pins.  Its contents become public in
-the Guix store; keep secrets and machine firmware outside this directory.")))
+its local helper modules and channel pins.  Keep secrets out of these public
+store inputs.  The configuration-source helper excludes hello-guix/firmware;
+that directory is retained separately through the system's firmware inputs.")))

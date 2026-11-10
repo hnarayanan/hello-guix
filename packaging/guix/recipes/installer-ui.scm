@@ -52,6 +52,8 @@
              (call-with-values
                  observe
                (lambda (target evidence) target)))
+           (define evaluated-channels
+             (delay (read-installer-channels #$(file-append runtime "/bin/guix"))))
            (define target
              (delay
                (prepare-target observe #$(file-append btrfs-progs "/bin/btrfs")
@@ -60,10 +62,14 @@
             (#$(installer-steps #:dry-run? #f) current-installer)
             (lambda (results steps)
               (run-prepared-installation results steps (force target) inspect
-                #$(file-append btrfs-progs "/bin/btrfs") #$channels #$configuration-support))
+                #$(file-append btrfs-progs "/bin/btrfs") #$channels #$configuration-support
+                #:channels (force evaluated-channels)))
             ;; Guix builds the step list before it starts its error handler.
             ;; Prepare the target during the welcome step so Guix can handle errors.
-            #:prepare (lambda () (force target)))))))
+            ;; Reject a broken evaluator before preparation can change the target.
+            #:prepare (lambda ()
+                        (force evaluated-channels)
+                        (force target)))))))
 
   (with-extensions (list runtime guile-gcrypt guile-json-3)
     (with-imported-modules

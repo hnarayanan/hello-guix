@@ -3,6 +3,7 @@
 ;; Tiny store generations and the production deployment entry points for the VM.
 
 (use-modules (gnu packages base)
+             (gnu packages linux)
              (hello-guix system boot)
              (guix gexp)
              (guix modules))
@@ -71,6 +72,7 @@
           (define no-kernel #$no-kernel)
           (define empty-kernel #$empty-kernel)
           (define checksum #$(file-append coreutils "/bin/sha256sum"))
+          (define mount-command #$(file-append util-linux "/bin/mount"))
           (define install-b #$((@@ (hello-guix system boot) asahi-boot-installer)
                                bundle-b grub))
           (define install-c #$((@@ (hello-guix system boot) asahi-boot-installer)

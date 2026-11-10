@@ -11,10 +11,14 @@
              (gnu installer timezone)
              (gnu installer user)
              (gnu installer utils)
+             (guix base32)
              (guix build utils)
+             (guix hash)
              (guix channels)
              ((guix tests) #:select (mock))
              (hello-guix installer linux configuration)
+             (hello-guix installer linux install)
+             (hello-guix installer linux firmware)
              (hello-guix installer linux target)
              (hello-guix installer linux setup-state)
              (ice-9 match)
@@ -62,18 +66,24 @@
 
 (define root-uuid "11111111-2222-4333-8444-555555555555")
 (define efi-uuid "A1B2-C3D4")
+(define firmware-path "hello-guix/firmware")
+(define firmware-sha256 (make-string 52 #\0))
 
 (define* (generate #:optional (answers results) (formatters steps)
-                   #:key (root root-uuid) (efi efi-uuid) channels)
+                   #:key (root root-uuid) (efi efi-uuid) channels firmware
+                   (firmware-hash (and firmware firmware-sha256)))
   (system-configuration formatters answers #:root-uuid root #:efi-uuid efi
-                        #:channels channels))
+                        #:channels channels #:firmware firmware
+                        #:firmware-sha256 firmware-hash))
 
 (define configuration (generate))
 (define* (field name #:optional (forms configuration))
-  (let ((os (find (lambda (form)
-                    (and (pair? form) (eq? 'with-asahi-hardware (car form))))
-                  forms)))
-    (set! os (cadr os))
+  (let ((os (any
+             (match-lambda
+               (('with-asahi-hardware os) os)
+               (('define 'my-system os) os)
+               (_ #f))
+             forms)))
     (find (lambda (form) (and (pair? form) (eq? name (car form)))) (cdr os))))
 
 (define (contains? value tree)
@@ -135,9 +145,12 @@
             (openpgp-fingerprint
              "3333 3333 3333 3333 3333 3333 3333 3333 3333 3333")))))
        '(guix asahi hello-guix personal)))
-(define channel-configuration (generate #:channels test-channels))
+(define channel-configuration
+  (generate #:channels test-channels #:firmware firmware-path))
 (test-assert "channel configuration imports Hello normally"
-  (and (contains? '(hello-guix system hardware) channel-configuration)
+  (and (contains? '(hello-guix apple-silicon) channel-configuration)
+       (contains? '(guix packages) channel-configuration)
+       (not (contains? 'with-asahi-hardware channel-configuration))
        (not (contains? 'add-to-load-path channel-configuration))
        (not (contains? '(hello-guix system configuration-retention)
                        channel-configuration))
@@ -160,17 +173,82 @@
 (for-each
  (lambda (channels)
    (test-error "incomplete or unauthenticated channel metadata is rejected"
-     'misc-error (generate #:channels channels)))
- (list '() (cdr test-channels)
+     'misc-error (generate #:channels channels #:firmware firmware-path)))
+ (list '() (cdr test-channels) (take test-channels 2)
        (cons (car test-channels) test-channels)
        (map (lambda (selected)
               (if (eq? 'hello-guix (channel-name selected))
                   (channel (inherit selected) (introduction #f)) selected))
             test-channels)))
+(test-assert "channel configuration defines an ordinary personal system"
+  (any (match-lambda
+         (('define 'my-system ('operating-system _ ...)) #t)
+         (_ #f))
+       channel-configuration))
+(test-assert "the public adapter receives the relative directory and its content hash"
+  (contains? `(on-apple-silicon my-system
+                 #:firmware (apple-firmware ,firmware-path
+                              (sha256 (base32 ,firmware-sha256))))
+             channel-configuration))
+(test-error "channel mode cannot omit the firmware hash" 'misc-error
+  (generate #:channels test-channels #:firmware firmware-path #:firmware-hash #f))
+(for-each
+ (lambda (hash)
+   (test-error "the writer rejects a malformed firmware hash" 'misc-error
+     (generate #:channels test-channels #:firmware firmware-path #:firmware-hash hash)))
+ (list "" (make-string 51 #\0) (make-string 53 #\0)
+       (make-string 52 #\z) (make-string 52 #\e) 42))
+(test-error "channel mode cannot omit firmware" 'misc-error
+  (generate #:channels test-channels))
+(test-error "firmware cannot silently use the legacy evaluator" 'misc-error
+  (generate #:firmware firmware-path))
+(for-each
+ (lambda (path)
+   (test-error "unsafe firmware paths are rejected before any file access" 'misc-error
+     (generate #:channels test-channels #:firmware path)))
+ '("" "/firmware" "." ".." "hello-guix/../firmware" "./firmware"
+   "hello-guix//firmware" "hello-guix/firmware/" 42))
+(define described-command #f)
+(define (channel-text channels)
+  (object->string `(list ,@(map channel->code channels))))
+(define* (read-fixture-channels text #:optional (status 0))
+  (mock ((hello-guix installer linux install) open-pipe*
+         (lambda arguments
+           (set! described-command (cdr arguments))
+           (open-input-string text)))
+    (mock ((hello-guix installer linux install) close-pipe
+           (lambda (port) (close-port port) status))
+      (read-installer-channels "/selected-profile/bin/guix"))))
+(test-equal "setup reader preserves exact evaluated channel records"
+  (map channel->code test-channels)
+  (map channel->code (read-fixture-channels (channel-text test-channels))))
+(test-equal "setup reader invokes the explicitly selected evaluator"
+  '("/selected-profile/bin/guix" "describe" "-f" "channels") described-command)
+(test-equal "setup profile without Hello keeps the legacy declaration" #f
+  (read-fixture-channels (channel-text (take test-channels 2))))
+(test-equal "packaged setup Guix retains the legacy channel contract" #f
+  (read-installer-channels setup-guix-executable))
+(test-error "setup reader refuses a relative evaluator" 'misc-error
+  (read-installer-channels "bin/guix"))
+(test-error "failed describe cannot silently select the legacy path" 'misc-error
+  (read-fixture-channels (channel-text test-channels) 256))
+(for-each
+ (lambda (text)
+   (test-error "invalid setup records cannot silently select the legacy path"
+     'misc-error (read-fixture-channels text)))
+ (list "" "(list)" "(list 1)" "(list) (list)"
+       (channel-text (cdr test-channels))
+       (channel-text (cons (car test-channels) test-channels))
+       (channel-text
+        (map (lambda (selected)
+               (if (eq? 'hello-guix (channel-name selected))
+                   (channel (inherit selected) (introduction #f)) selected))
+             test-channels))))
 (test-equal "validated target accepts the explicit channel handoff"
   channel-configuration
   (target-system-configuration steps results verified-test-target
-                               #:channels test-channels))
+                               #:channels test-channels #:firmware firmware-path
+                               #:firmware-sha256 firmware-sha256))
 
 ;; The test program validates this target in tests/installer/linux/target.scm first.
 ;; Check that Guix's configuration writer accepts it.
@@ -350,20 +428,30 @@
 (define output-directory
   (match (command-line)
     ((_ directory) directory)
-    ((_ directory channels-file) directory)
-    (_ (error "Expected a scratch directory and optional evaluated channels file"))))
-;; A signed-channel handoff run supplies its actual evaluated channel records.
-;; The ordinary unit run emits only the fictional example above.
+    ((_ directory guix) directory)
+    (_ (error "Expected a scratch directory and optional setup Guix executable"))))
 (define output-channel-configuration
   (match (command-line)
-    ((_ _ channels-file)
-     (generate
-      #:channels
-      (save-module-excursion
-       (lambda ()
-         (set-current-module (make-fresh-user-module))
-         (module-use! (current-module) (resolve-interface '(guix channels)))
-         (primitive-load channels-file)))))
+    ((_ _ guix)
+     ;; Use the same reader as setup, even though this test program is not a
+     ;; profile-shaped Guix executable. The later handoff check evaluates
+     ;; this declaration through that exact authenticated profile.
+     (let ((selected (read-installer-channels guix)))
+       (unless selected (error "The handoff fixture requires a Hello Guix channel"))
+       (call-with-output-file (string-append output-directory "/handoff-channels.scm")
+         (lambda (port) (display (channel-text selected) port) (newline port)))
+       ;; Reuse the native synthetic archive made by the preceding source
+       ;; check. This is the production realization and publication helper.
+       (prepare-installation-firmware
+        (string-append output-directory "/firmware-source/hardlinks.cpio")
+        (string-append output-directory "/" firmware-path))
+       (let ((directory (string-append output-directory "/" firmware-path)))
+         (test-assert "the generated pin covers the final installation receipt"
+           (file-exists? (string-append directory "/.hello-guix-origin.scm")))
+         (generate #:channels selected #:firmware firmware-path
+                   #:firmware-hash
+                   (bytevector->nix-base32-string
+                    (file-hash* directory #:recursive? #t #:select? (const #t)))))))
     (_ channel-configuration)))
 (define output-file (string-append output-directory "/example-system.scm"))
 (when (file-exists? output-file)

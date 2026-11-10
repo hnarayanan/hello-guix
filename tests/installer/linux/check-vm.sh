@@ -35,5 +35,7 @@ truncate -s "$size" "$records/disk.img"
     -device virtio-blk-pci,drive=test -nic none \
     < /dev/null > "$records/console.log" 2>&1
 grep -F "$marker-PASS" "$records/console.log"
-! grep -F "$marker-FAIL" "$records/console.log"
+if grep -F "$marker-FAIL" "$records/console.log"; then
+    exit 1
+fi
 ) 2>&1 | tee "$records/check.log"

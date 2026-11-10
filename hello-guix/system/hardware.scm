@@ -91,7 +91,10 @@
 
 (define (adapt-system os firmware audio? home-users)
   (unless (and (memq (operating-system-kernel os) (list linux-libre asahi-linux))
-               (eq? (operating-system-initrd os) base-initrd)
+               (or (eq? (operating-system-initrd os) base-initrd)
+                   (and firmware
+                        (eq? (operating-system-initrd os)
+                             (apple-silicon-initrd firmware))))
                (not (operating-system-hurd os)))
     (error "This hardware adapter requires the standard Linux initrd and default or Asahi kernel"))
   (when (and (not (eq? (operating-system-kernel os) asahi-linux))
@@ -109,6 +112,7 @@
           (if firmware
               (operating-system
                (inherit base)
+               (initrd (apple-silicon-initrd firmware))
                (firmware
                 (let ((existing (operating-system-firmware base)))
                   (if (memq firmware existing) existing
@@ -146,12 +150,13 @@ firmware on the running Mac during activation, as in Hello Guix 0.1."
 
 (define* (on-apple-silicon os #:key firmware (audio? #t) (home-users #f))
   "Return OS with Apple Silicon hardware support and explicit FIRMWARE.
-FIRMWARE is a file-like directory whose paths are relative to Linux's firmware
-search root, for example brcm/ and apple/. Retain its exact contents through
+FIRMWARE names a directory by hash with apple-firmware, or is an already fixed
+file-like input such as a package or computed-file. Its paths are relative to
+Linux's firmware search root, for example brcm/ and apple/. Retain it through
 the ordinary operating-system firmware field, alongside existing firmware.
 No firmware is discovered from the running machine or extracted from EFI.
 
-This supplies firmware during ordinary system activation; it does not yet
-add firmware to the initrd. AUDIO? and HOME-USERS have the same meaning as
-in with-asahi-hardware."
+The kernel unpacks the same firmware into the initrd before its early modules
+load; ordinary system activation supplies the retained input after boot.
+AUDIO? and HOME-USERS have the same meaning as in with-asahi-hardware."
   (adapt-system os (apple-silicon-firmware firmware) audio? home-users))

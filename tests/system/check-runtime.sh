@@ -7,9 +7,10 @@ case "${1:-}" in
     "") check_name=runtime-check ;;
     --channel) check_name=runtime-channel ;;
     --system) check_name=runtime-system ;;
-    *) echo 'Usage: check-runtime.sh [--channel|--system]' >&2; exit 1 ;;
+    --firmware) check_name=runtime-firmware ;;
+    *) echo 'Usage: check-runtime.sh [--channel|--system|--firmware]' >&2; exit 1 ;;
 esac
-if test "$#" -gt 1; then echo 'Usage: check-runtime.sh [--channel|--system]' >&2; exit 1; fi
+if test "$#" -gt 1; then echo 'Usage: check-runtime.sh [--channel|--system|--firmware]' >&2; exit 1; fi
 if test -n "${CHECK_CONFIGURATION:-}"; then
     if test "$check_name" != runtime-check; then
         echo 'configuration= is for make check code only=runtime.' >&2; exit 1
@@ -112,6 +113,21 @@ start_recorded_check "$check_name"
             ${daemon[@]+"${daemon[@]}"} "$records/fixture/timeout" \
             --signal=TERM --kill-after=20 1200 "$records/fixture/run" "$records"
         printf '\nNative system command checks passed with the recorded channel profile.\n'
+        exit
+    fi
+    if test "$check_name" = runtime-firmware; then
+        printf 'Building the disposable early-firmware fixture...\n'
+        runtime_guix build --no-grafts ${build_options[@]+"${build_options[@]}"} \
+            --root="$records/fixture" --file="$source/tests/system/firmware-initrd.scm"
+        "$records/fixture/timeout" --signal=TERM --kill-after=20 300 \
+            "$records/fixture/qemu" -machine virt -cpu max -accel tcg \
+            -m 512 -smp 1 -nographic -no-reboot -nic none \
+            -kernel "$records/fixture/kernel" -initrd "$records/fixture/initrd" \
+            -append 'console=ttyAMA0 panic=1' \
+            < /dev/null > "$records/console.log" 2>&1
+        grep -F 'HELLO-GUIX-FIRMWARE-PASS' "$records/console.log"
+        if grep -F 'HELLO-GUIX-FIRMWARE-FAIL' "$records/console.log"; then exit 1; fi
+        printf '\nFirmware is available before initrd setup in the disposable VM.\n'
         exit
     fi
     printf 'Checking hardware support through the channel profile...\n'

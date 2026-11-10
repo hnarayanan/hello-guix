@@ -3,7 +3,7 @@
 ;; Evaluate a real writer output with its authenticated channel profile.
 ;; guix repl channel-handoff.scm GENERATED-CONFIG NEW-RECORDS-DIRECTORY
 ;; The caller authenticates the profile first. This checks the declaration
-;; handoff; it builds only evaluator/provenance components, not the system.
+;; handoff; it builds only evaluator, firmware and provenance components.
 
 (use-modules (gnu services)
              (gnu services base)
@@ -17,6 +17,7 @@
              (guix profiles)
              (guix store)
              (ice-9 match)
+             (ice-9 popen)
              (ice-9 textual-ports)
              (srfi srfi-1))
 
@@ -27,6 +28,26 @@
 (define (contents file)
   (call-with-input-file file get-string-all))
 
+(define (declared-firmware-hash file)
+  (call-with-input-file file
+    (lambda (port)
+      (let loop ()
+        (match (read port)
+          (('on-apple-silicon 'my-system #:firmware
+            ('apple-firmware "hello-guix/firmware" ('sha256 ('base32 hash))))
+           hash)
+          ((? eof-object?) (error "Generated declaration has no firmware content hash"))
+          (_ (loop)))))))
+
+(define (directory-hash guix directory)
+  ;; Independently check the generated pin with the documented user command.
+  (let* ((port (open-pipe* OPEN_READ guix "hash" "-r" directory))
+         (hash (get-string-all port))
+         (status (close-pipe port)))
+    (unless (zero? status)
+      (error "Could not compute the generated declaration's firmware hash" status))
+    (string-trim-right hash)))
+
 (define (channel-codes-by-name channels)
   ;; Describe output and profile manifests can enumerate the same channels in
   ;; different orders. The future policy names the same distinct inputs.
@@ -36,10 +57,10 @@
                (string<? (symbol->string (channel-name left))
                          (symbol->string (channel-name right)))))))
 
-(define (load-declaration file)
+(define* (load-declaration file #:optional (module (make-fresh-user-module)))
   (save-module-excursion
    (lambda ()
-     (set-current-module (make-fresh-user-module))
+     (set-current-module module)
      (module-use! (current-module) (resolve-interface '(guix channels)))
      (primitive-load file))))
 
@@ -58,8 +79,36 @@
   (chdir directory)
   (mkdir "working")
   (copy-file fixture "working/config.scm")
+  (mkdir "working/hello-guix")
+  (unless (copy-recursively
+           (string-append (dirname fixture) "/hello-guix/firmware")
+           "working/hello-guix/firmware" #:log #f)
+    (error "Could not copy the prepared firmware into the isolated declaration"))
+  (let ((firmware-directory (string-append directory "/working/hello-guix/firmware")))
+    (check "The prepared firmware receipt exists before declaration evaluation" #t
+           (file-exists? (string-append firmware-directory "/.hello-guix-origin.scm")))
+    (check "The generated declaration records ordinary guix hash -r output"
+           (directory-hash (string-append profile "/bin/guix") firmware-directory)
+           (declared-firmware-hash "working/config.scm")))
   (let* ((file (string-append directory "/working/config.scm"))
-         (os (load-declaration file))
+         (declaration-module (make-fresh-user-module))
+         (os (load-declaration file declaration-module))
+         (personal (module-ref declaration-module 'my-system))
+         (ordinary-firmware (operating-system-firmware personal))
+         (inputs (operating-system-firmware os))
+         (firmware
+          (begin
+            (check "The generated system preserves its ordinary firmware inputs"
+                   ordinary-firmware (take inputs (length ordinary-firmware)))
+            ;; The free AVD firmware is an independent platform input.
+            ;; Find the explicit Apple input whose bytes this check retains.
+            (match (filter (lambda (input)
+                             (and (computed-file? input)
+                                  (string=? "apple-silicon-firmware"
+                                            (computed-file-name input))))
+                           inputs)
+              ((input) input)
+              (other (error "Expected exactly one explicit Apple firmware input" other)))))
          (daemon
           (match (filter (lambda (entry) (eq? guix-service-type (service-kind entry)))
                          (operating-system-user-services os))
@@ -73,9 +122,8 @@
     (call-with-output-file "module-origins.scm"
       (lambda (port)
         (for-each
-         (lambda (name)
-           (let* ((relative (string-append "hello-guix/system/" name))
-                  (output (manifest-entry-item hello-entry))
+         (lambda (relative)
+           (let* ((output (manifest-entry-item hello-entry))
                   (source (canonicalize-path
                            (string-append output "/share/guile/site/"
                                           (effective-version) "/" relative ".scm")))
@@ -88,9 +136,12 @@
              (check "Hello bytecode resolves through the channel" compiled
                     (canonicalize-path (search-path %load-compiled-path
                                                     (string-append relative ".go"))))
-             (write (list name source compiled) port)
+             (write (list relative source compiled) port)
              (newline port)))
-         '("audio" "boot-files" "boot" "hardware" "runtime"))))
+         '("hello-guix/apple-silicon" "hello-guix/system/audio"
+           "hello-guix/system/boot-files" "hello-guix/system/boot"
+           "hello-guix/system/firmware" "hello-guix/system/hardware"
+           "hello-guix/system/runtime"))))
     (with-store store
       (set-build-options store #:use-substitutes? #f)
       (parameterize ((%graft? #f))
@@ -99,6 +150,7 @@
                           (operating-system-with-provenance os file))))
                (evaluator (run-with-store store
                             (lower-object (guix-configuration-guix daemon))))
+               (normalized (run-with-store store (lower-object firmware)))
                (provenance
                 (run-with-store store
                   (service-value
@@ -106,7 +158,10 @@
                     (list (service system-service-type '())
                           (service provenance-service-type file))))))
                (output (derivation->output-path provenance)))
-          (build-derivations store (list evaluator provenance))
+          (check "The generated system retains its explicit firmware dependency" #t
+                 (and (member (derivation-file-name normalized)
+                              (requisites store (list (derivation-file-name system)))) #t))
+          (build-derivations store (list evaluator normalized provenance))
           (check "Installed Guix retains the complete evaluating profile"
                  (canonicalize-path profile)
                  (canonicalize-path (derivation->output-path evaluator)))
@@ -120,10 +175,38 @@
             (lambda (port) (display (derivation-file-name system) port) (newline port)))
           (symlink output "provenance")
           (add-indirect-root store (string-append directory "/provenance"))
+          (let* ((normalized-output (derivation->output-path normalized))
+                 (retained (canonicalize-path
+                            (string-append normalized-output "/lib/firmware")))
+                 (declared (run-with-store store
+                             (lower-object
+                              (local-file
+                               (string-append directory "/working/hello-guix/firmware")
+                               #:recursive? #t)))))
+            (check "Normalized firmware retains the exact prepared directory" declared retained)
+            (check "Firmware closure retains its declared source" #t
+                   (and (member retained (requisites store (list normalized-output))) #t))
+            (for-each
+             (lambda (name)
+               (check "Prepared bytes, upstream manifest and installation receipt are retained"
+                      (contents (string-append "working/hello-guix/firmware/" name))
+                      (contents (string-append retained "/" name))))
+             '("brcm/first.bin" "brcm/linked.bin" "apple/second.bin" "apple/linked.bin"
+               ".vendorfw.manifest" ".hello-guix-origin.scm"))
+            (symlink normalized-output "normalized-firmware")
+            (add-indirect-root store (string-append directory "/normalized-firmware"))
+            ;; Native provenance keeps the declaration; restore its explicit
+            ;; relative input from the generation's retained firmware directory.
+            (mkdir-p "recovery/hello-guix")
+            (copy-file (string-append output "/configuration.scm") "recovery/config.scm")
+            (unless (copy-recursively retained "recovery/hello-guix/firmware" #:log #f)
+              (error "Could not restore the retained firmware for replay")))
           (rename-file "working" "working-unavailable")
-          (check "Working entry point is unavailable" #f (file-exists? file))))))
-  (display "Generated declaration, channel imports, evaluator and native provenance verified.\n")
-  (display "Replay provenance/configuration.scm in a fresh process and compare system.drv.\n"))
+          (check "Working entry point is unavailable" #f (file-exists? file))
+          (check "Working firmware directory is unavailable" #f
+                 (file-exists? (string-append directory "/working/hello-guix/firmware")))))))
+  (display "Generated declaration, prepared firmware, channel imports and native provenance verified.\n")
+  (display "Replay recovery/config.scm in a fresh process and compare system.drv.\n"))
 
 (match (cdr (command-line))
   ((fixture directory)

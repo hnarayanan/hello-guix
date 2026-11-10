@@ -5,6 +5,9 @@
 
 (define installer-test
   (primitive-load (string-append (dirname (current-filename)) "/installer-runtime.scm")))
+(define setup-guix
+  (primitive-load (string-append (dirname (current-filename))
+                                 "/../../../packaging/guix/recipes/setup-tools.scm")))
 (define configuration-support
   (primitive-load (string-append (dirname (current-filename))
                                  "/../../../packaging/guix/recipes/configuration-support.scm")))
@@ -12,6 +15,7 @@
 (installer-test "check-mac-configuration"
   #~(begin
       (use-modules (hello-guix installer linux configuration))
+      (define setup-guix-executable #$(file-append setup-guix "/bin/guix"))
       (for-each
        (lambda (file) (unless (primitive-load file) (exit #f)))
        (list #$(local-file "target.scm")

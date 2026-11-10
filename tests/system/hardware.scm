@@ -349,11 +349,10 @@
             (map shepherd-service-provision audio-session)
             (map shepherd-service-provision (session-services (home gnome-removed "alex"))))
 
-;; The new interface describes explicit firmware. This path is deliberately
-;; absent: constructing and inspecting the system must not read its contents.
-;; The firmware build/replay fixture separately checks the retained bytes.
+;; Computed inputs already have declared identities. Their contents need not
+;; exist during evaluation; the firmware fixture checks hashed local inputs.
 (define declared-firmware
-  (local-file "fixtures/not-present-apple-firmware" #:recursive? #t))
+  (computed-file "synthetic-apple-firmware" #~(mkdir #$output)))
 (define declared-base
   (operating-system
     (inherit console)
@@ -368,6 +367,9 @@
  (list #f 42 "hello-guix/firmware"))
 (test-error "explicit adaptation requires an operating system" #t
   (on-apple-silicon #f #:firmware declared-firmware))
+(test-assert "packages remain valid explicit firmware inputs"
+  (operating-system?
+   (on-apple-silicon declared-base #:firmware (car %base-firmware))))
 (define declared
   (on-apple-silicon declared-base #:firmware declared-firmware))
 (test-assert "explicit adaptation returns an ordinary operating system"
@@ -406,6 +408,14 @@
        (cons "packages" operating-system-packages)))
 (test-eq "explicit adaptation preserves personal login policy"
   custom-login (car (entries declared elogind-service-type)))
+(test-eq "legacy adaptation keeps Guix's ordinary initrd constructor"
+  base-initrd (operating-system-initrd supported))
+(test-assert "explicit firmware extends the initrd constructor"
+  (not (eq? base-initrd (operating-system-initrd declared))))
+(test-error "explicit firmware rejects an unrelated custom initrd" #t
+  (on-apple-silicon
+   (operating-system (inherit declared-base) (initrd (lambda _ #f)))
+   #:firmware declared-firmware))
 (test-eq "explicit firmware keeps the Asahi kernel"
   asahi-linux (operating-system-kernel declared))
 (test-eq "explicit firmware keeps the matching boot bundle"
@@ -426,6 +436,8 @@
   (map shepherd-service-provision (session-services (home declared "alex"))))
 (define declared-twice
   (on-apple-silicon declared #:firmware declared-firmware))
+(test-eq "reapplying the same firmware preserves its initrd constructor"
+  (operating-system-initrd declared) (operating-system-initrd declared-twice))
 (test-equal "reapplying the same firmware preserves its complete selection"
   (operating-system-firmware declared)
   (operating-system-firmware declared-twice))
