@@ -8,6 +8,9 @@ case "${1:-python}" in
     *) echo "Unknown code check: $1. Run make help." >&2; exit 1 ;;
 esac
 if test "$#" -gt 2; then echo 'Usage: check-code.sh [check] [source-archive]' >&2; exit 1; fi
+if test -n "${CHECK_CONFIGURATION:-}" && test "${1:-python}" != runtime; then
+    echo 'configuration= is for make check code only=runtime.' >&2; exit 1
+fi
 PYTHON=$(command -v "${PYTHON:-python3}")
 case "$PYTHON" in /*) ;; *) PYTHON="$PWD/$PYTHON" ;; esac
 export PYTHON

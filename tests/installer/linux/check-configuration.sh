@@ -28,7 +28,7 @@ if test -n "${CHECK_CHANNEL_PROFILE:-}"; then
             ${daemon[@]+"${daemon[@]}"} "$channel_profile/bin/guix" "$@"
     }
     # Freeze the complete profile before using it for both writer input and replay.
-    channel_guix repl "$source/tests/system/runtime-profile.scm" > "$records/channel-profile"
+    channel_guix repl "$source/scripts/system/runtime-profile.scm" > "$records/channel-profile"
     channel_profile=$(cat "$records/channel-profile")
     if ! test -x "$channel_profile/bin/guix"; then
         printf 'Selected profile has no executable bin/guix: %s\n' "$channel_profile" >&2

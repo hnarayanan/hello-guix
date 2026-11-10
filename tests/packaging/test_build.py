@@ -300,7 +300,7 @@ if args[0] == "system":
     directory = pathlib.Path(args[-1]).parent
     if directory.name == "configuration-source":
         directory = directory.parent
-    variant = ("firmware" if directory.name == "recovery" and directory.parent.name == "firmware"
+    variant = (directory.parent.name if directory.name == "recovery"
                else directory.name.removesuffix("-provenance"))
     stage = variant + "-replay"
 with pathlib.Path({str(self.root / 'calls')!r}).open("a") as stream:
@@ -332,6 +332,15 @@ elif args[0] == "build" and script == "boot-cli.scm":
     root = next(arg.removeprefix("--root=") for arg in args if arg.startswith("--root="))
     pathlib.Path(root).symlink_to({str(self.runtime_fixture)!r})
     print("fixture passed: boot-cli.scm")
+elif args[0] == "repl" and script == "configuration.scm":
+    directory = pathlib.Path(args[-3])
+    directory.mkdir()
+    (directory / "system.drv").write_text("/fixture/configuration.drv\\n")
+    (directory / "recovery").mkdir()
+    (directory / "recovery/config.scm").write_text(";; Configuration routing fixture.\\n")
+    if state.get("change_source"):
+        (pathlib.Path(args[1]).parents[2] / "README.md").write_text("changed saved source")
+    print("fixture passed: " + stage)
 elif script == "firmware.scm":
     directory = pathlib.Path(args[-3])
     directory.mkdir()
@@ -429,6 +438,93 @@ else:
         self.assertTrue(all(call["args"][0] in ("repl", "describe", "build", "system") for call in calls))
         self.assertFalse(any("installer" in argument or "setup-tools" in argument
                              for call in calls for argument in call["args"]))
+
+    def prepare_runtime_configuration(self):
+        self.prepare_runtime_profiles()
+        configuration = self.root / "reviewed configuration/config.scm"
+        configuration.parent.mkdir()
+        configuration.write_text(";; Reviewed declaration routing fixture.\n")
+        return configuration.resolve()
+
+    def test_runtime_configuration_keeps_the_selected_profile_and_replays(self):
+        configuration = self.prepare_runtime_configuration()
+        before = configuration.read_bytes()
+        self.runtime_state.write_text(json.dumps({"move_current": True}))
+        self.environment.update(GUILE_LOAD_PATH="/personal/override",
+                                GUILE_LOAD_COMPILED_PATH="/personal/override",
+                                GUIX_DAEMON_SOCKET="/chosen/daemon/socket")
+        result = self.make("check", "code", "only=runtime",
+                           f"configuration={configuration}", "jobs=1", "cores=2")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(configuration.read_bytes(), before)
+        records, = (self.project / "build").glob("runtime-check-*")
+        records = records.resolve()
+        self.assertEqual(self.current.resolve(), self.profiles[1])
+        self.assertEqual((records / "profile").read_text().strip(), str(self.profiles[0]))
+        self.assertEqual((records / "channels.scm").read_text().strip(),
+                         "fixture channels for " + self.profiles[0].name)
+        self.assertTrue((records / "source/SHA256SUMS").is_file())
+        self.assertFalse((records / "channel").exists())
+        self.assertEqual((records / "configuration/system.drv").read_bytes(),
+                         (records / "configuration/recovered.drv").read_bytes())
+        calls = self.calls()
+        self.assertEqual([call["stage"] for call in calls],
+                         ["runtime-profile.scm", "describe", "configuration.scm",
+                          "configuration-replay"])
+        self.assertTrue(all(call["profile"] == str(self.profiles[0]) for call in calls))
+        self.assertEqual(calls[2]["args"],
+                         ["repl", str(records / "source/tests/system/configuration.scm"),
+                          str(configuration), str(records / "configuration"), "1", "2"])
+        self.assertEqual(calls[-1]["args"],
+                         ["system", "build", "--no-grafts", "--save-provenance",
+                          "--derivation", str(records / "configuration/recovery/config.scm")])
+        for call in calls:
+            self.assertEqual(call["environment"]["HOME"], str(records / "home"))
+            self.assertEqual(call["environment"]["GUIX_DAEMON_SOCKET"], "/chosen/daemon/socket")
+            self.assertNotIn("GUILE_LOAD_PATH", call["environment"])
+            self.assertNotIn("GUILE_LOAD_COMPILED_PATH", call["environment"])
+        self.assertIn("Reviewed configuration replayed", result.stdout)
+
+    def test_runtime_configuration_failure_and_replay_mismatch_propagate(self):
+        configuration = self.prepare_runtime_configuration()
+        cases = ({"fail": "configuration.scm"}, {"fail": "configuration-replay"},
+                 {"mismatch": "configuration"}, {"change_source": True})
+        for index, state in enumerate(cases):
+            with self.subTest(state=state):
+                self.runtime_state.write_text(json.dumps(state))
+                (self.root / "calls").unlink(missing_ok=True)
+                result = self.make("check", "code", "only=runtime",
+                                   f"configuration={configuration}",
+                                   f"build_dir=build/configuration-failure-{index}")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                records, = (self.project / f"build/configuration-failure-{index}").glob("runtime-check-*")
+                self.assertTrue((records / "source/SHA256SUMS").is_file())
+                if "fail" in state:
+                    self.assertIn("Error 23", result.stdout)
+                    self.assertIn("fixture failure: " + state["fail"],
+                                  (records / "check.log").read_text())
+                    self.assertEqual(self.calls()[-1]["stage"], state["fail"])
+                elif "mismatch" in state:
+                    self.assertNotIn("Reviewed configuration replayed", result.stdout)
+                else:
+                    self.assertIn("Build inputs changed", result.stdout)
+
+    def test_runtime_configuration_rejects_wrong_routes_and_inputs_before_guix(self):
+        configuration = self.prepare_runtime_configuration()
+        cases = (("only=hardware", f"configuration={configuration}"),
+                 ("only=runtime-channel", f"configuration={configuration}"),
+                 ("only=runtime", "configuration=relative/config.scm"),
+                 ("only=runtime", f"configuration={configuration.parent / 'missing.scm'}"),
+                 ("only=runtime", f"configuration={configuration.parent}"),
+                 ("only=runtime", f"configuration={configuration}", "boot_reference=/gnu/store/example"))
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                result = self.make("check", "code", *arguments)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse((self.root / "calls").exists())
+        result = self.make("build", "image", f"configuration={configuration}")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertFalse((self.root / "calls").exists())
 
     def test_runtime_channel_route_authenticates_without_precompiling_hello(self):
         self.prepare_runtime_profiles()

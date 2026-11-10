@@ -269,6 +269,59 @@ Repeat with another existing profile to compare inputs. Obtaining newer
 channels is a separate step from this check; it does not run `guix pull` or
 prepare an installer.
 
+### Check a reviewed configuration
+
+To check a concrete migration before building it, prepare a separate directory
+containing the reviewed `config.scm` and its explicit `hello-guix/firmware`
+input. Select an existing complete profile containing Guix, Asahi and Hello
+Guix:
+
+```sh
+make check code only=runtime \
+  GUIX=/absolute/path/to/the/profile/bin/guix \
+  configuration=/absolute/path/to/reviewed/config.scm
+```
+
+This uses that profile directly. It copies the declaration and firmware into
+the check records, verifies channel module origins and the retained evaluator,
+and builds the small firmware and native provenance wrappers. It restores the
+saved declaration and exact firmware input, moves the working copies aside,
+and compares the system derivation in a fresh process. Ordinary base firmware
+is preserved; exactly one explicit Apple Silicon firmware input is required.
+The entry point must be self-contained apart from `hello-guix/firmware`.
+
+Records under `build/runtime-check-*/configuration/` include the retained
+profile, provenance, firmware and recovery directory. `future-channels.scm`
+records the declaration's followed defaults without changing them. Review
+those separately from the evaluator's exact channels: disposable local
+introductions used in tests do not establish a public update policy. Existing
+user channel files remain Guix's override; this check uses an isolated home.
+
+The check compares derivations with grafts disabled. Now build the complete
+system with normal grafts, using that same profile and reviewed declaration:
+
+```sh
+make plan system \
+  GUIX=/absolute/path/to/the/profile/bin/guix \
+  configuration=/absolute/path/to/reviewed/config.scm
+make build system \
+  GUIX=/absolute/path/to/the/profile/bin/guix \
+  configuration=/absolute/path/to/reviewed/config.scm \
+  jobs=1 cores=2
+```
+
+The plan describes the work. The build resolves dependencies, reuses cached
+outputs and saves the complete system as a garbage-collection root at
+`build/system-build-*/system`. Beside it are the selected profile, exact
+channels, command, build log and exit status. Set `build_dir` to keep these
+records elsewhere. The built system retains Guix's native source provenance;
+the installed system remains unchanged.
+
+Dependency resolution can reveal further work as grafts are computed. Even
+Guix's own `system build --dry-run` may stop at the first missing set, so its
+initial list is not a complete build or download total. Our Make plan leaves
+that work to the build.
+
 ### Check authenticated channel delivery
 
 To exercise fetching and replaying Hello Guix as a signed channel, use the

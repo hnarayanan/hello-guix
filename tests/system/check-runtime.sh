@@ -10,6 +10,22 @@ case "${1:-}" in
     *) echo 'Usage: check-runtime.sh [--channel|--system]' >&2; exit 1 ;;
 esac
 if test "$#" -gt 1; then echo 'Usage: check-runtime.sh [--channel|--system]' >&2; exit 1; fi
+if test -n "${CHECK_CONFIGURATION:-}"; then
+    if test "$check_name" != runtime-check; then
+        echo 'configuration= is for make check code only=runtime.' >&2; exit 1
+    fi
+    case "$CHECK_CONFIGURATION" in
+        /*) ;;
+        *) echo 'configuration= requires an absolute path.' >&2; exit 1 ;;
+    esac
+    if ! test -f "$CHECK_CONFIGURATION" || ! test -r "$CHECK_CONFIGURATION"; then
+        printf 'Configuration is not a readable file: %s\n' "$CHECK_CONFIGURATION" >&2
+        exit 1
+    fi
+    if test -n "${BOOT_REFERENCE:-}"; then
+        echo 'Choose configuration= or boot_reference= for the runtime check.' >&2; exit 1
+    fi
+fi
 start_recorded_check "$check_name"
 (
     mkdir "$records/home"
@@ -42,7 +58,7 @@ start_recorded_check "$check_name"
     cd "$records"
     # Ask Guix for its complete profile before following the executable's links.
     # Freeze that profile so a concurrent pull cannot change later commands.
-    runtime_guix repl "$source/tests/system/runtime-profile.scm" > profile
+    runtime_guix repl "$source/scripts/system/runtime-profile.scm" > profile
     runtime=$(cat profile)
     if ! test -x "$runtime/bin/guix"; then
         printf 'Selected profile has no executable bin/guix: %s\n' "$runtime" >&2
@@ -53,6 +69,15 @@ start_recorded_check "$check_name"
     runtime_guix describe -f channels > channels.scm
     printf '%s\n' "${GUIX_DAEMON_SOCKET:-default local socket}" > daemon
     printf 'Guix profile: %s\n' "$runtime"
+    if test -n "${CHECK_CONFIGURATION:-}"; then
+        runtime_guix repl "$source/tests/system/configuration.scm" \
+            "$CHECK_CONFIGURATION" "$records/configuration" "${MAX_JOBS:-}" "${CORES:-}"
+        runtime_guix system build --no-grafts --save-provenance --derivation \
+            "$records/configuration/recovery/config.scm" > "$records/configuration/recovered.drv"
+        cmp "$records/configuration/system.drv" "$records/configuration/recovered.drv"
+        printf '\nReviewed configuration replayed with the selected channel profile.\n'
+        exit
+    fi
     if test "$check_name" = runtime-channel; then
         printf 'Building the disposable channel authentication tools...\n'
         runtime_guix build ${build_options[@]+"${build_options[@]}"} \
@@ -70,7 +95,7 @@ start_recorded_check "$check_name"
     runtime_guix build ${build_options[@]+"${build_options[@]}"} \
         --root="$records/channel" --file="$source/tests/system/runtime-channel.scm"
     runtime_command="$records/channel/bin/guix"
-    runtime_guix repl "$source/tests/system/runtime-profile.scm" > channel-profile
+    runtime_guix repl "$source/scripts/system/runtime-profile.scm" > channel-profile
     runtime=$(cat channel-profile)
     if ! test -x "$runtime/bin/guix"; then
         printf 'Built profile has no executable bin/guix: %s\n' "$runtime" >&2
