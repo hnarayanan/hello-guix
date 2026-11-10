@@ -16,7 +16,8 @@
 ;; Direct preflights must not import a checkout's caches or build outputs.
 (define inputs
   (map (lambda (name) (string-append source "/" name))
-       '(".gitignore" ".guix-channel" "COPYING" "Makefile" "NOTICE" "README.md"
+       '(".gitignore" ".guix-authorizations" ".guix-channel"
+         "COPYING" "Makefile" "NOTICE" "README.md"
          "LICENSES" "docs" "hello-guix" "packaging" "patches" "scripts" "tests")))
 (define (channel-file? file stat)
   (and (not (member (basename file) '(".DS_Store" "__pycache__")))

@@ -36,7 +36,7 @@
                  (lambda (port) (display "fixture kernel; not executable" port))))))
     (synopsis "Kernel-shaped input for an isolated command test")
     (description "This is a small non-bootable input for lifecycle tests.")
-    (home-page "https://github.com/hnarayanan/hello-guix")
+    (home-page "https://github.com/hello-guix/hello-guix")
     (license #f)))
 
 (define boot-cli-initrd (plain-file "boot-cli-initrd" "fixture initrd; not executable"))

@@ -32,6 +32,7 @@ for variant in "${variants[@]}"; do
     cp "$source/COPYING" "$bundle/hello-guix/COPYING"
     cp -R "$source/LICENSES" "$bundle/hello-guix/LICENSES"
     cp "$source/hello-guix/system/"*.scm "$bundle/hello-guix/modules/hello-guix/system/"
+    cp -R "$source/hello-guix/packages" "$bundle/hello-guix/modules/hello-guix/"
     case "$variant" in
         console) services='(cons (service network-manager-service-type) %base-services)' ;;
         gnome) services='(cons (service gnome-desktop-service-type) %desktop-services)' ;;

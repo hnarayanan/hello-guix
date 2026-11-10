@@ -131,6 +131,8 @@ start_recorded_check "$check_name"
         exit
     fi
     printf 'Checking hardware support through the channel profile...\n'
+    runtime_guix repl "$source/tests/system/audio-packages.scm"
+    runtime_guix repl "$source/tests/system/software.scm" "${MAX_JOBS:-}" "${CORES:-}"
     runtime_guix repl "$source/tests/system/hardware.scm"
     runtime_guix repl "$source/tests/system/boot.scm"
     runtime_guix repl "$source/tests/system/boot-deployment.scm"

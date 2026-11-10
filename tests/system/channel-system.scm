@@ -50,6 +50,6 @@
         (channels
          (cons (channel
                 (name 'hello-guix)
-                (url "https://github.com/hnarayanan/hello-guix")
+                (url "https://github.com/hello-guix/hello-guix")
                 (branch "main"))
                %default-channels))))))))

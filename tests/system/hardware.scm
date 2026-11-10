@@ -21,7 +21,9 @@
              (gnu system keyboard)
              (gnu system linux-initrd)
              (gnu system shadow)
-             (asahi guix packages linux)
+             (hello-guix packages linux)
+             ((hello-guix packages desktop) #:prefix current:)
+             (hello-guix packages video)
              (asahi guix initrd)
              (asahi guix services firmware)
              ((asahi guix services sound) #:prefix asahi:)
@@ -33,6 +35,7 @@
              (hello-guix system boot)
              (guix gexp)
              (guix packages)
+             (guix search-paths)
              (guix store)
              (guix derivations)
              (guix monads)
@@ -56,7 +59,15 @@
 (define (home os name) (cadr (assoc name (value os guix-home-service-type))))
 (define (home-entries home type)
   (filter (lambda (entry) (eq? (service-kind entry) type)) (home-environment-user-services home)))
+(define network-manager-configuration-network-manager
+  (@@ (gnu services networking) network-manager-configuration-network-manager))
+(define bluetooth-configuration-bluez
+  (@@ (gnu services desktop) bluetooth-configuration-bluez))
 (define supported (with-asahi-hardware console))
+(define (speaker-services os)
+  (filter (lambda (entry)
+            (eq? (service-type-name (service-kind entry)) 'speakersafetyd))
+          (operating-system-user-services os)))
 (test-eq "Asahi kernel" asahi-linux (operating-system-kernel supported))
 (test-eq "retained boot bundle uses the selected kernel" (operating-system-kernel supported)
          (value supported asahi-boot-service-type))
@@ -85,7 +96,7 @@
 (test-equal "accounts untouched" (operating-system-users console) (operating-system-users supported))
 (test-equal "only ordinary Homes" '("alex" "sam") (map car (value supported guix-home-service-type)))
 (test-equal "audio without a desktop" 1 (length (home-entries (home supported "alex") asahi:home-pipewire-service-type)))
-(test-equal "speaker protection" 1 (length (entries supported speakersafetyd-service-type)))
+(test-equal "speaker protection" 1 (length (speaker-services supported)))
 (test-equal "audio opt out" '() (entries (with-asahi-hardware console #:audio? #f) guix-home-service-type))
 (test-equal "explicit Home ownership" '("sam")
             (map car (value (with-asahi-hardware console #:home-users '("sam")) guix-home-service-type)))
@@ -214,6 +225,11 @@
 (test-equal "one iwd" 1 (length (entries supported-desktop iwd-service-type)))
 (test-equal "wpa-supplicant removed" '() (entries supported-desktop wpa-supplicant-service-type))
 (test-equal "NM uses iwd" '(iwd) (network-manager-configuration-shepherd-requirement (value supported-desktop network-manager-service-type)))
+(test-eq "NM retains the ordinary declaration shared with GNOME"
+  (network-manager-configuration-network-manager
+   (service-type-default-value network-manager-service-type))
+  (network-manager-configuration-network-manager
+   (value supported-desktop network-manager-service-type)))
 (test-error "custom PulseAudio needs a port" #t
             (with-asahi-hardware
              (operating-system (inherit console)
@@ -237,6 +253,42 @@
 (test-equal "NM unrelated dependency retained" '(iwd networking)
             (network-manager-configuration-shepherd-requirement (value custom-network network-manager-service-type)))
 (test-equal "NM DNS policy retained" "none" (network-manager-configuration-dns (value custom-network network-manager-service-type)))
+(test-eq "personal NM policy preserves the common package declaration"
+  (network-manager-configuration-network-manager
+   (service-type-default-value network-manager-service-type))
+  (network-manager-configuration-network-manager
+   (value custom-network network-manager-service-type)))
+(define personal-network-manager
+  (package (inherit current:network-manager) (name "personal-network-manager")))
+(define personal-network
+  (with-asahi-hardware
+   (operating-system (inherit console)
+    (services
+     (cons (service network-manager-service-type
+                    (network-manager-configuration
+                     (network-manager personal-network-manager) (dns "none")))
+           %base-services)))))
+(test-eq "an explicitly selected NM package remains the user's choice"
+  personal-network-manager
+  (network-manager-configuration-network-manager
+   (value personal-network network-manager-service-type)))
+(define bluetooth
+  (with-asahi-hardware
+   (operating-system (inherit console)
+    (services (cons (service bluetooth-service-type) %base-services)))))
+(test-eq "Bluetooth retains its ordinary declaration before lowering"
+  bluez
+  (bluetooth-configuration-bluez (value bluetooth bluetooth-service-type)))
+(define personal-bluez (package (inherit bluez) (name "personal-bluez")))
+(define personal-bluetooth
+  (service bluetooth-service-type (bluetooth-configuration (bluez personal-bluez))))
+(test-eq "an explicitly selected Bluetooth package and service remain intact"
+  personal-bluetooth
+  (car (entries
+        (with-asahi-hardware
+         (operating-system (inherit console)
+          (services (cons personal-bluetooth %base-services))))
+        bluetooth-service-type)))
 (test-equal "static console has no added manager" '() (entries supported network-manager-service-type))
 (test-equal "DHCP remains unchanged" 1
             (length (entries (with-asahi-hardware
@@ -337,6 +389,23 @@
             (map service-kind (operating-system-user-services twice)))
 (test-equal "idempotent initrd" (operating-system-initrd-modules supported) (operating-system-initrd-modules twice))
 (test-equal "idempotent Homes" '("alex" "sam") (map car (value twice guix-home-service-type)))
+(define (profile-packages os)
+  (service-value (fold-services (operating-system-services os)
+                                #:target-type profile-service-type)))
+(for-each
+ (lambda (os)
+   (test-equal "video decoding is available once, with or without a desktop"
+     1 (count (lambda (package) (eq? package asahi-va-driver))
+              (profile-packages os)))
+   (test-equal "free AVD firmware is retained once alongside other firmware"
+     1 (count (lambda (input) (eq? input avd-firmware))
+              (operating-system-firmware os))))
+ (list supported supported-desktop twice))
+(test-assert "the decoder declares standard VA-API profile discovery"
+  (any (lambda (path)
+         (and (string=? "LIBVA_DRIVERS_PATH" (search-path-specification-variable path))
+              (equal? '("lib/dri") (search-path-specification-files path))))
+       (package-native-search-paths asahi-va-driver)))
 
 (define gnome-removed
   (with-asahi-hardware
@@ -387,7 +456,8 @@
    #:firmware declared-firmware))
 (define supplied-firmware (operating-system-firmware declared-base))
 (define prepared-firmware
-  (remove (lambda (input) (memq input supplied-firmware))
+  (remove (lambda (input)
+            (or (eq? input avd-firmware) (memq input supplied-firmware)))
           (operating-system-firmware declared)))
 (test-equal "explicit adaptation preserves user firmware and its order"
   supplied-firmware
@@ -430,7 +500,7 @@
   (operating-system-initrd-modules supported)
   (operating-system-initrd-modules declared))
 (test-equal "explicit firmware keeps speaker protection"
-  1 (length (entries declared speakersafetyd-service-type)))
+  1 (length (speaker-services declared)))
 (test-equal "explicit firmware keeps the ordinary audio session"
   (map shepherd-service-provision audio-session)
   (map shepherd-service-provision (session-services (home declared "alex"))))

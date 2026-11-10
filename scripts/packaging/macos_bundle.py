@@ -181,7 +181,7 @@ def copy_guides(source, bundle, image_source):
     """Keep user guides offline; link to the repository for contributor material."""
     destination = bundle / "docs"
     destination.mkdir()
-    repository = "https://github.com/hnarayanan/hello-guix/blob/main/"
+    repository = "https://github.com/hello-guix/hello-guix/blob/main/"
     for name in ("installation.md", "configuration.md", "recovery.md", "philosophy.md"):
         text = (source / "docs" / name).read_text()
         for local, remote in (("development.md", "docs/development.md"),

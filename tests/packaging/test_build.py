@@ -38,7 +38,7 @@ class BuildTests(unittest.TestCase):
         record_snapshot(self.inputs, self.project)
         verify_snapshot(self.inputs, self.project)
         self.assertEqual((self.inputs / "SHA256SUMS").stat().st_mtime_ns, before)
-        for name in (".guix-channel", "packaging/guix/channels.scm", "COPYING",
+        for name in (".guix-authorizations", ".guix-channel", "packaging/guix/channels.scm", "COPYING",
                      "LICENSES/GPL-3.0-or-later.txt", "LICENSES/MIT.txt",
                      "packaging/macos/asahi-installer-source.json.license",
                      "packaging/macos/asahi-installer-runtime.json.license",
@@ -105,7 +105,8 @@ class BuildTests(unittest.TestCase):
             path.write_text("not source")
         record_snapshot(self.inputs, self.project)
         self.assertEqual({p.name for p in self.inputs.iterdir()}, {
-            ".gitignore", ".guix-channel", "COPYING", "Makefile", "NOTICE", "README.md", "SHA256SUMS",
+            ".gitignore", ".guix-authorizations", ".guix-channel", "COPYING",
+            "Makefile", "NOTICE", "README.md", "SHA256SUMS",
             "LICENSES", "docs", "hello-guix", "packaging", "patches", "scripts", "tests",
         })
         self.assertFalse((self.inputs / "scripts/__pycache__").exists())
@@ -383,7 +384,8 @@ elif script == "channel-migration.scm":
 elif args[:2] == ["system", "build"]:
     result = "different" if state.get("mismatch") == variant else variant
     print("/fixture/" + result + ".drv")
-elif script in ("hardware.scm", "boot.scm", "boot-deployment.scm", "boot-build.scm", "runtime.scm"):
+elif script in ("audio-packages.scm", "software.scm", "hardware.scm", "boot.scm",
+                "boot-deployment.scm", "boot-build.scm", "runtime.scm"):
     print("fixture passed: " + stage)
 else:
     sys.exit("Unexpected Guix operation: " + repr(args))
@@ -422,6 +424,11 @@ else:
                                  "fixture channels for " + channel_profile.name)
                 self.assertTrue((records / "source/SHA256SUMS").is_file())
                 calls = self.calls()[before:]
+                self.assertEqual([call["stage"] for call in calls if call["args"][0] == "repl"],
+                                 ["runtime-profile.scm", "channel-profile", "audio-packages.scm",
+                                  "software.scm", "hardware.scm", "boot.scm", "boot-deployment.scm",
+                                  "boot-build.scm", "runtime.scm", "firmware.scm",
+                                  "channel-migration.scm"])
                 build = next(i for i, call in enumerate(calls) if call["args"][0] == "build")
                 self.assertTrue(all(call["profile"] == str(profile) for call in calls[:build + 1]))
                 self.assertTrue(all(call["profile"] == str(channel_profile) for call in calls[build + 1:]))
@@ -759,6 +766,11 @@ else:
         self.assertEqual(build["args"][-3:], [reference, "1", "2"])
         self.assertNotIn("BOOT_REFERENCE", build["environment"])
         self.assertEqual(build["profile"], str(self.channel_profiles[0]))
+        software, = [call for call in self.calls() if call["stage"] == "software.scm"]
+        self.assertEqual(software["args"][-2:], ["1", "2"])
+        self.assertEqual(software["profile"], str(self.channel_profiles[0]))
+        audio, = [call for call in self.calls() if call["stage"] == "audio-packages.scm"]
+        self.assertEqual(len(audio["args"]), 2)
         firmware, = [call for call in self.calls() if call["stage"] == "firmware.scm"]
         self.assertEqual(firmware["args"][-2:], ["1", "2"])
         self.assertEqual(firmware["profile"], str(self.channel_profiles[0]))
@@ -794,8 +806,9 @@ else:
     def test_runtime_check_failures_keep_the_status_and_records(self):
         self.prepare_runtime_profiles()
         stages = ("runtime-profile.scm", "runtime-channel.scm", "channel-profile",
-                  "hardware.scm", "boot.scm", "boot-deployment.scm", "boot-build.scm",
-                  "runtime.scm", "firmware.scm", "firmware-replay", "channel-migration.scm",
+                  "audio-packages.scm", "software.scm", "hardware.scm", "boot.scm",
+                  "boot-deployment.scm", "boot-build.scm", "runtime.scm", "firmware.scm",
+                  "firmware-replay", "channel-migration.scm",
                   "original-replay", "added-package-replay", "local-helpers-replay")
         for index, stage in enumerate(stages):
             with self.subTest(stage=stage):

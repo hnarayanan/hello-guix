@@ -49,7 +49,7 @@ test "$(id -u)" != 0 || { echo 'Start this launcher as your macOS user.' >&2; ex
 printf '\n%s\n%s\n%s\n' \
     'Hello Guix opens the Guix installer after reboot, including desktop and service choices.' \
     'Asahi will prepare real disk space and Apple boot authorisation.' \
-    'Help and reports: https://github.com/hnarayanan/hello-guix/issues'
+    'Help and reports: https://github.com/hello-guix/hello-guix/issues'
 
 # Keep attempt files and logs after the temporary extraction is removed.
 runs="$HOME/Library/Application Support/Hello Guix"

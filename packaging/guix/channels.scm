@@ -2,13 +2,15 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Introduction commits establish trust in each channel.
-;; The commit fields select the tested versions to build and install.
+;; The commit fields record release-build inputs and the legacy installer's
+;; default channels. Channel-backed installations use separate branch-following
+;; defaults. This candidate is under verification.
 (list
  (channel
   (name 'guix)
   (url "https://git.guix.gnu.org/guix.git")
   (branch "master")
-  (commit "9a7fb4173f9b503c4cafedaa0aa4bdd9d83fc5dc")
+  (commit "7c39b1b1a0ad114ab5ceab0c53fb84dd0f990d9f")
   (introduction
    (make-channel-introduction
     "9edb3f66fd807b096b48283debdcddccfea34bad"
@@ -18,7 +20,7 @@
   (name 'asahi)
   (url "https://codeberg.org/asahi-guix/channel")
   (branch "main")
-  (commit "ee2e7465c0137224bcc0ad3b3d0d02109cb3a6c7")
+  (commit "b9132769b361431e999f7d166d715ef4c6e101d2")
   (introduction
    (make-channel-introduction
     "3eeb493b037bea44f225c4314c5556aa25aff36c"

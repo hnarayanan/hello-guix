@@ -1,0 +1,111 @@
+From: Hello Guix contributors
+Subject: [PATCH] monads: Preserve parameter bindings across suspended computations.
+
+state-with-parameters currently leaves parameters changed when a computation
+suspends at a prompt.  Interleaved lowerings can then see the transformation
+of a sibling Home or operating-system computation, producing derivations
+whose declared inputs disagree with their expanded builder paths.
+
+Use recursive parameterize bindings, which Guile compiles to singular VM
+fluid bindings.  Unlike the C procedure with-fluids*, these support resumable
+continuations.  Parameter converters run on binding, not again on resumption
+or restoration.
+
+Test both suspension isolation and mutation/conversion across resumption.
+The maintained Hello Guix runtime tests additionally exercise cold Home and
+system-like unions in both input orders.
+
+Based on Guix 7c39b1b1a0ad114ab5ceab0c53fb84dd0f990d9f.
+Related discussion: https://issues.guix.gnu.org/76485
+Upstream-Status: Not submitted
+SPDX-License-Identifier: GPL-3.0-or-later
+
+--- a/guix/monads.scm
++++ b/guix/monads.scm
+@@ -593,21 +593,19 @@
+ (define-public (state-with-parameters parameters parameter-values mval)
+   "Set PARAMETERS to PARAMETER-VALUES for the dynamic extent of MVAL, a value
+ in the state monad."
+-  (define (set-value parameter value)
+-    (parameter value))
+-
+   (lambda (state)
+-    ;; XXX: 'with-fluids*' does not work with prompts, therefore the parameters
+-    ;; are set globally. This leaves the parameters changed upon a non-local
+-    ;; exit and restores them only after running MVAL to completion. See
+-    ;; <https://issues.guix.gnu.org/76485>.
+-    (let ((old-values (map set-value parameters parameter-values)))
+-      (call-with-values
+-          (lambda ()
+-            (mval state))
+-        (lambda (value state)
+-          (map set-value parameters old-values)
+-          (values value state))))))
++    ;; Bind one parameter at a time: Guile compiles 'parameterize' to VM
++    ;; fluid bindings, whereas the C procedure 'with-fluids*' introduces a
++    ;; continuation barrier.  These bindings are restored on suspension and
++    ;; reinstated on resumption, without applying parameter converters again.
++    ;; See <https://issues.guix.gnu.org/76485>.
++    (let loop ((parameters parameters)
++               (values parameter-values))
++      (match parameters
++        (() (mval state))
++        ((parameter . rest)
++         (parameterize ((parameter (car values)))
++           (loop rest (cdr values))))))))
+ 
+ (define-syntax state-parameterize
+   (syntax-rules ()
+--- a/tests/monads.scm
++++ b/tests/monads.scm
+@@ -148,6 +148,50 @@
+            (return (list outer inner (parameter)))))
+      '(outside inside outside))))
+ 
++(test-equal "state-parameterize, suspended continuation"
++  '(outside inside sibling)
++  (let ((parameter (make-parameter 'outside))
++        (tag (make-prompt-tag)))
++    (let* ((outside #f)
++           (result
++            (call-with-prompt tag
++              (lambda ()
++                (run-with-state
++                    (state-parameterize ((parameter 'inside))
++                      (lambda (state)
++                        (abort-to-prompt tag)
++                        (values (parameter) state)))))
++              (lambda (continue)
++                (set! outside (parameter))
++                (parameter 'sibling)
++                (continue #t)))))
++      (list outside result (parameter)))))
++
++(test-equal "state-parameterize, mutation and conversion across suspension"
++  '((0) (2) (0) 2)
++  (let* ((conversions 0)
++         (parameter
++          (make-parameter 0
++            (lambda (value)
++              (set! conversions (+ 1 conversions))
++              (list value))))
++         (tag (make-prompt-tag))
++         (outside #f))
++    (set! conversions 0)
++    (let ((result
++           (call-with-prompt tag
++             (lambda ()
++               (run-with-state
++                   (state-with-parameters (list parameter) '(1)
++                     (lambda (state)
++                       (parameter 2)
++                       (abort-to-prompt tag)
++                       (values (parameter) state)))))
++             (lambda (continue)
++               (set! outside (parameter))
++               (continue #t)))))
++      (list outside result (parameter) conversions))))
++
+ (test-assert "mlet* + text-file + package-file"
+   (run-with-store %store
+     (mlet* %store-monad ((guile (package-file %bootstrap-guile "bin/guile"))

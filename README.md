@@ -102,7 +102,7 @@ Guix brings together the work of three projects:
   configuration machinery, package builds and system generations.
 
 The [architecture guide](docs/architecture.md) is a map to the
-[source](https://github.com/hnarayanan/hello-guix). The
+[source](https://github.com/hello-guix/hello-guix). The
 [development guide](docs/development.md) explains how to build and test it.
 
 ## Licence and philosophy
@@ -129,7 +129,7 @@ it my own. I’m putting the work here so that, if your interests happen to
 overlap with mine, you can do something with it too.
 
 I’m [Harish Narayanan](https://harishnarayanan.org/). You’re welcome to
-[report a problem](https://github.com/hnarayanan/hello-guix/issues), suggest a
+[report a problem](https://github.com/hello-guix/hello-guix/issues), suggest a
 change, or write to me at
 [mail@harishnarayanan.org](mailto:mail@harishnarayanan.org).
 

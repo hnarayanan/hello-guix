@@ -66,6 +66,25 @@ configuration. It checks the archive's manifest, leaves a small origin
 record with the firmware, then hashes that complete directory for the declaration. The released 0.1 installer and existing installations
 keep their earlier handoff; moving them to this interface is a separate step.
 
+### Keeping the software together
+
+The recipes in `hello-guix/packages/` supply stable component releases that
+have not yet reached our upstream channels. Guix's own recipes take over
+when they catch up. The hardware adapter selects the kernel and audio
+services; it also makes the video decoder available through the normal
+system profile and firmware fields.
+
+Some libraries are used throughout a desktop, including inside packages we
+did not list ourselves. Guix's system transformation and graft mechanisms
+let those consumers share the selected graphics and networking libraries
+while reusing their existing builds. This applies to packages lowered as
+part of that system. Separately managed Home environments and user profiles
+still use their own package definitions; they do not inherit the system's
+transformation. The system declaration stays readable, and its saved channel
+profile records the exact definitions used. A package build establishes those
+inputs; booting and testing the Mac establishes that they work together on
+the hardware.
+
 ### The files Guix builds
 
 Guix turns this description into a set of files we can install. It creates

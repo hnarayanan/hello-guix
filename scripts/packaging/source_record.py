@@ -17,7 +17,8 @@ import tempfile
 
 
 PROJECT = Path(__file__).resolve().parents[2]
-SOURCE_FILES = (".gitignore", ".guix-channel", "COPYING", "Makefile", "NOTICE", "README.md")
+SOURCE_FILES = (".gitignore", ".guix-authorizations", ".guix-channel",
+                "COPYING", "Makefile", "NOTICE", "README.md")
 SOURCE_DIRECTORIES = ("LICENSES", "docs", "hello-guix", "packaging", "patches", "scripts", "tests")
 EXCLUDED_ENTRIES = (
     ".git", "build",
@@ -39,7 +40,7 @@ def valid_source_entry(path, directory):
     if len(name.parts) > 1 and name.parts[0] in ("image-source", "source-record"):
         return valid_source_entry(path, directory / name.parts[0])
     roots = {
-        ("packaging", "guix", "channel"): ("hello-guix/system/", "hello-guix/apple-silicon.scm"),
+        ("packaging", "guix", "channel"): ("hello-guix/system/", "hello-guix/packages/", "hello-guix/apple-silicon.scm"),
         ("packaging", "guix", "installer"): ("hello-guix/installer/linux/",),
     }
     allowed = roots.get(name.parts[:3], ())

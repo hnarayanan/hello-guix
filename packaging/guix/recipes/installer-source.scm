@@ -25,7 +25,7 @@
     ("gnu/installer/final.scm"
      . "1284f6f6ae49b00c9cf11847b3d7bec19fb57c69e466da4224cf25c96fab0ca9")
     ("gnu/installer/utils.scm"
-     . "60846e84b80bfa0aa33aa59342d1d7712ff7e3bbedbbf7a3b5e9ed3d1e623a1c")
+     . "ebc85d4245f2abc297226438e127c757919ce3d65dde96df5b8badbb77640973")
     ("gnu/installer/hardware.scm"
      . "31f5ae4942ff653d15577beaf994a9102a9611b601818a64d7e51733ba6351a0")
     ("gnu/installer/services.scm"

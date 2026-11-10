@@ -90,7 +90,7 @@ in Startup Options. If setup opens, follow the
 [retry instructions](installation.md#retry-the-installation).
 
 If setup still cannot start, or refuses to resume,
-[report the problem](https://github.com/hnarayanan/hello-guix/issues).
+[report the problem](https://github.com/hello-guix/hello-guix/issues).
 Include the new error, the original installation error and the command
 output above.
 

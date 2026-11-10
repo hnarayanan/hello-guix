@@ -302,7 +302,7 @@ USB stick, then unmount the stick before rebooting. If you cannot save the
 files, take a photo of the error. When ready to leave the shell, run `sync`,
 then `reboot` or `halt`.
 
-When [reporting a problem](https://github.com/hnarayanan/hello-guix/issues),
+When [reporting a problem](https://github.com/hello-guix/hello-guix/issues),
 include the release version, Mac model, stage and exact error. Review logs
 before sharing them, as they can contain personal information.
 

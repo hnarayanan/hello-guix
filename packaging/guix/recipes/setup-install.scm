@@ -36,7 +36,7 @@
    (list #:image-builder (input "ram-image.scm")
          #:os-name "Guix System"
          #:os-description (string-append "Guix System (Hello Guix " release-version ")")))
-  (home-page "https://github.com/hnarayanan/hello-guix")
+  (home-page "https://github.com/hello-guix/hello-guix")
   (synopsis "Install Guix System in Asahi's prepared space")
   (description "Boot a temporary Guix installation environment in RAM and
 ask the standard Guix settings and service questions. Install the chosen

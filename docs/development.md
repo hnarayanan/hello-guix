@@ -55,7 +55,7 @@ Begin with a checkout of the project or an unpacked source download. With
 Git installed, you can get a checkout on the computer where you’ll work:
 
 ```sh
-git clone https://github.com/hnarayanan/hello-guix.git
+git clone https://github.com/hello-guix/hello-guix.git
 cd hello-guix
 ```
 
@@ -252,7 +252,8 @@ On ARM64 Linux, from the project root, select that profile's Guix command:
 make check code only=runtime GUIX=/absolute/path/to/the/profile/bin/guix
 ```
 
-The source lives in `hello-guix/system/` and `hello-guix/installer/`.
+The source lives in `hello-guix/system/`, `hello-guix/packages/` and
+`hello-guix/installer/`.
 The channel uses the file links in `packaging/guix/channel/` to compile
 system support independently of the installer. The [packaging notes](../packaging/guix/README.md)
 explain this small build boundary.
@@ -287,7 +288,9 @@ retention and replay, not automatic configuration rewriting or real hardware.
 
 These checks may need uncached build inputs. They derive fictional systems
 with grafts disabled and build the channel profile, its retention package,
-native provenance records and small boot fixtures. They do not measure
+native provenance records and small boot fixtures. A small graphics fixture
+also exercises normal grafts and checks the resulting references. These checks
+do not measure
 normal update costs or build a complete system. Boot-file and generated
 deployment checks use temporary files. The installed system stays unchanged.
 
@@ -295,9 +298,27 @@ The saved working tree has no channel commit. These checks establish local
 recovery with the retained test profile; authenticated pulls and replay from
 a published channel require a committed channel with its introduction.
 
-Repeat with another existing profile to compare inputs. Obtaining newer
-channels is a separate step from this check; it does not run `guix pull` or
-prepare an installer.
+To prepare a profile following the current upstream branches, use a separate
+path so your usual Guix stays selected:
+
+```sh
+"$GUIX" pull --channels=packaging/guix/rolling-channels.scm \
+  --profile="$PWD/build/upstream"
+make check code only=runtime GUIX="$PWD/build/upstream/bin/guix"
+```
+
+The check records the exact revisions it used. The release build keeps its
+own recorded inputs in `packaging/guix/channels.scm`; following branches and
+recording a particular build serve different purposes. Current hardware
+support uses Guix's operating-system transformation interface, so use a
+recent Guix profile for these checks.
+
+The current development baseline, Guix `7c39b1b`, has a lowering defect when
+nested Home configurations suspend work for grafts. Our cold-build check
+reproduces it. The [experimental evaluator](../packaging/guix/README.md#experimental-guix-evaluator)
+builds a separate Guix profile with the source correction under review.
+Select that profile for this candidate; its retained source makes the
+correction part of the build’s provenance.
 
 ### Check a reviewed configuration
 
@@ -689,7 +710,7 @@ source in `$assembly/source`. For a GitHub release tagged `v0.1`, use:
 
 ```sh
 package_dir="$release_work/downloads"
-base_url=https://github.com/hnarayanan/hello-guix/releases/download/v0.1
+base_url=https://github.com/hello-guix/hello-guix/releases/download/v0.1
 make -C "$assembly/source" build package \
   assembly="$assembly" package_dir="$package_dir" \
   version=0.1 base_url="$base_url"

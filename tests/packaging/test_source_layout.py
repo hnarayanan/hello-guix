@@ -37,6 +37,7 @@ class SourceLayoutTests(unittest.TestCase):
     def test_views_match_real_modules_and_namespaces(self):
         runtime = set((self.project / "hello-guix/system").rglob("*.scm"))
         runtime.update((self.project / "hello-guix").glob("*.scm"))
+        runtime.update((self.project / "hello-guix/packages").rglob("*.scm"))
         installer = set((self.project / "hello-guix/installer/linux").rglob("*.scm"))
         self.assertTrue(runtime)
         self.assertTrue(installer)

@@ -9,7 +9,9 @@
   #:use-module (gnu system linux-initrd)
   #:use-module (gnu packages linux)
   #:use-module (asahi guix initrd)
-  #:use-module (asahi guix packages linux)
+  #:use-module (hello-guix packages linux)
+  #:use-module (hello-guix packages video)
+  #:use-module (hello-guix system software)
   #:use-module (asahi guix services firmware)
   #:use-module (asahi guix services udev)
   #:use-module (hello-guix system audio)
@@ -34,6 +36,16 @@
                    (service-type-default-value wpa-supplicant-service-type))))
     (cons 'iwd (remove (lambda (name) (or (eq? name 'iwd) (memq name replaced)))
                        requirements))))
+
+;; VA-API clients discover the decoder through the profile's ordinary search
+;; path. Installing it does not require a particular desktop or application.
+(define video-profile-service-type
+  (service-type
+   (name 'apple-silicon-video)
+   (extensions (list (service-extension profile-service-type
+                                       (const (list asahi-va-driver)))))
+   (default-value #t)
+   (description "Expose the Apple Silicon VA-API decoder to applications.")))
 
 (define (network-services services)
   (let ((managed? (any (lambda (service)
@@ -87,7 +99,7 @@
       (fold (lambda (addition result) (add-service result addition))
             (network-services updated)
             (append (if firmware '() (list (service asahi-firmware-service-type)))
-                    (list %udev-mtd-by-name-service))))))
+                    (list %udev-mtd-by-name-service (service video-profile-service-type)))))))
 
 (define (adapt-system os firmware audio? home-users)
   (unless (and (memq (operating-system-kernel os) (list linux-libre asahi-linux))
@@ -107,6 +119,8 @@
           (operating-system
            (inherit os)
            (kernel asahi-linux)
+           (firmware (delete-duplicates
+                      (append (operating-system-firmware os) (list avd-firmware)) eq?))
            (initrd-modules (delete-duplicates (append asahi-initrd-modules extra-modules)))))
          (with-firmware
           (if firmware
@@ -134,7 +148,8 @@
                          services)
                 (error "The boot service must use the system's Asahi kernel"))
               (add-service services (service asahi-boot-service-type kernel)))))))
-    (if audio? (with-asahi-audio result #:home-users home-users) result)))
+    (with-apple-silicon-software
+     (if audio? (with-asahi-audio result #:home-users home-users) result))))
 
 (define* (with-asahi-hardware os #:key (audio? #t) (home-users #f))
   "Return OS with the Asahi kernel, firmware, and hardware services from the
